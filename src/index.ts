@@ -3,6 +3,7 @@ interface Env {
   DB: D1Database;
   PROFILE_IMAGES: R2Bucket;
   INITIAL_LEADER_DISPLAY_NAME?: string;
+  INITIAL_LEADER_USERNAME?: string;
   INITIAL_LEADER_PASSWORD?: string;
   COMPETITION_ACTIVE?: string;
 }
@@ -20,7 +21,7 @@ async function hashPassword(password: string, salt = crypto.randomUUID()) {
   const bytes = new TextEncoder().encode(password);
   const key = await crypto.subtle.importKey("raw", bytes, "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 120000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 100000, hash: "SHA-256" },
     key,
     256,
   );
@@ -51,10 +52,11 @@ function validProfile(body: any) {
 }
 
 async function ensureInitialLeader(env: Env, body: any) {
-  if (!env.INITIAL_LEADER_DISPLAY_NAME || !env.INITIAL_LEADER_PASSWORD) return;
+  const leaderName = env.INITIAL_LEADER_DISPLAY_NAME || env.INITIAL_LEADER_USERNAME;
+  if (!leaderName || !env.INITIAL_LEADER_PASSWORD) return;
   const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM users").first<{ count: number }>();
   if (count?.count) return;
-  if (body.displayName !== env.INITIAL_LEADER_DISPLAY_NAME || body.password !== env.INITIAL_LEADER_PASSWORD) return;
+  if (body.displayName?.trim().toLowerCase() !== leaderName.trim().toLowerCase() || body.password !== env.INITIAL_LEADER_PASSWORD) return;
   const timestamp = now();
   await env.DB.prepare(
     "INSERT INTO users (id, display_name, english_name, chinese_name, wechat_id, class_grade, role, password_hash, terms_accepted_at, is_initial_leader, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'club-leader', ?, ?, 1, ?, ?)",

@@ -18,6 +18,7 @@ bucket_name = "no-vibe-no-code-profile-images"
 
 [vars]
 COMPETITION_ACTIVE = "false"
+INITIAL_LEADER_USERNAME = "UnoxyRich"
 
 [[routes]]
 pattern = "novibenocode.ccwu.cc"

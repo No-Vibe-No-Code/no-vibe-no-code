@@ -123,4 +123,66 @@ termsDialog.addEventListener("close", () => {
 });
 const dialog = document.getElementById("accountDialog"); document.getElementById("accountButton").onclick = () => dialog.showModal();
 document.getElementById("accountClose").onclick = () => dialog.close();
-document.getElementById("loginForm").onsubmit = async (event) => { event.preventDefault(); try { const result = await post("/api/auth/login", Object.fromEntries(new FormData(event.target))); const me = await (await fetch("/api/me")).json(); document.getElementById("accountContent").innerHTML = `<p class="eyebrow">ACCOUNT / 001</p><h3>${result.user.displayName}</h3><p>${result.user.role}</p><form id="profileForm" class="panel-form"><label>English name<input name="englishName" value="${me.user.english_name}" required></label><label>中文名<input name="chineseName" value="${me.user.chinese_name}" required></label><label>WeChat ID<input name="wechatId" value="${me.user.wechat_id}" required></label><label>Class + grade<input name="classGrade" value="${me.user.class_grade}" required></label><label>Profile image<input type="file" name="image" accept="image/png,image/jpeg,image/webp"></label><button class="pink-button">Save profile</button><p class="form-message" id="profileMessage"></p></form><button class="outline-button" id="deleteAccount">${lang === "zh" ? "删除账号" : "Delete account"}</button> <button class="pink-button" id="logout">${lang === "zh" ? "退出登录" : "Sign out"}</button>`; document.getElementById("profileForm").onsubmit = async (profileEvent) => { profileEvent.preventDefault(); const profileData = Object.fromEntries(new FormData(profileEvent.target)); try { await fetch("/api/profile", { method:"PUT", headers:{"content-type":"application/json"}, body:JSON.stringify(profileData) }); const image = profileEvent.target.image.files[0]; if (image) { const reader = new FileReader(); reader.onload = () => post("/api/profile-image", { dataUrl:reader.result }); reader.readAsDataURL(image); } document.getElementById("profileMessage").textContent = lang === "zh" ? "档案已保存。" : "Profile saved."; } catch (error) { document.getElementById("profileMessage").textContent = error.message; } }; document.getElementById("deleteAccount").onclick = async () => { if (confirm(lang === "zh" ? "确定删除账号？" : "Delete your account?")) { await fetch("/api/profile", { method:"DELETE" }); location.reload(); } }; document.getElementById("logout").onclick = async () => { await post("/api/auth/logout", {}); location.reload(); }; } catch (error) { document.getElementById("loginMessage").textContent = error.message; } };
+const accountContent = document.getElementById("accountContent");
+const accountButton = document.getElementById("accountButton");
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[character]);
+const requestJson = async (url, options = {}) => {
+  const response = await fetch(url, options);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Request failed");
+  return result;
+};
+const fileDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(new Error("Could not read that image."));
+  reader.readAsDataURL(file);
+});
+const renderAccount = (user) => {
+  const privileged = ["club-leader", "teacher", "maintainer"].includes(user.role);
+  accountButton.textContent = user.display_name;
+  accountContent.innerHTML = `<p class="eyebrow">ACCOUNT / 001</p><h3>${escapeHtml(user.display_name)}</h3><p class="account-role">${escapeHtml(user.role)}</p>${privileged ? `<a class="pink-button account-admin-link" href="/admin.html">${lang === "zh" ? "打开管理面板 ↗" : "Open admin dashboard ↗"}</a>` : ""}<form id="profileForm" class="panel-form"><label>English name<input name="englishName" value="${escapeHtml(user.english_name)}" required></label><label>中文名<input name="chineseName" value="${escapeHtml(user.chinese_name)}" required></label><label>WeChat ID<input name="wechatId" value="${escapeHtml(user.wechat_id)}" required></label><label>Class + grade<input name="classGrade" value="${escapeHtml(user.class_grade)}" required></label><label>Profile image<input type="file" name="image" accept="image/png,image/jpeg,image/webp"></label><button class="pink-button">Save profile</button><p class="form-message" id="profileMessage"></p></form><div class="account-actions"><button class="outline-button" id="deleteAccount">${lang === "zh" ? "删除账号" : "Delete account"}</button><button class="pink-button" id="logout">${lang === "zh" ? "退出登录" : "Sign out"}</button></div>`;
+  document.getElementById("profileForm").onsubmit = async (event) => {
+    event.preventDefault();
+    const message = document.getElementById("profileMessage");
+    const profileData = Object.fromEntries(new FormData(event.target));
+    delete profileData.image;
+    try {
+      await requestJson("/api/profile", { method:"PUT", headers:{"content-type":"application/json"}, body:JSON.stringify(profileData) });
+      const image = event.target.image.files[0];
+      if (image) await post("/api/profile-image", { dataUrl:await fileDataUrl(image) });
+      message.textContent = lang === "zh" ? "档案已保存。" : "Profile saved.";
+    } catch (error) {
+      message.textContent = error.message;
+    }
+  };
+  document.getElementById("deleteAccount").onclick = async () => {
+    if (!confirm(lang === "zh" ? "确定删除账号？" : "Delete your account?")) return;
+    try {
+      await requestJson("/api/profile", { method:"DELETE" });
+      location.reload();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+  document.getElementById("logout").onclick = async () => {
+    await post("/api/auth/logout", {});
+    location.reload();
+  };
+};
+const loginForm = document.getElementById("loginForm");
+loginForm.onsubmit = async (event) => {
+  event.preventDefault();
+  const message = document.getElementById("loginMessage");
+  message.textContent = "";
+  try {
+    await post("/api/auth/login", Object.fromEntries(new FormData(event.target)));
+    const me = await requestJson("/api/me");
+    renderAccount(me.user);
+  } catch (error) {
+    message.textContent = error.message;
+  }
+};
+requestJson("/api/me").then(({ user }) => {
+  if (user) renderAccount(user);
+}).catch((error) => console.error("Could not restore account session", error));

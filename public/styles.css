@@ -96,3 +96,41 @@ html[lang="zh-CN"] .hero-copy h1{font-size:clamp(52px,6vw,88px);letter-spacing:-
 @media(prefers-reduced-motion:reduce){
   .fly-in-dialog[open],.fly-in-dialog[open]::backdrop{animation:none}
 }
+
+/* Account and administration */
+.account-role{display:inline-block;margin:0 0 18px;padding:7px 10px;border:1px solid var(--blush);color:var(--pink);font:10px "DM Mono",monospace;text-transform:uppercase}
+.account-admin-link{width:100%;margin-bottom:16px}
+.account-actions{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
+.admin-page{background:var(--soft)}
+.admin-shell{position:relative;z-index:1;max-width:1180px;margin:auto;padding:80px 5vw 110px}
+.admin-intro{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:end;margin-bottom:45px}
+.admin-intro h1{font-size:clamp(60px,8vw,110px);margin-bottom:0}
+.admin-intro .lede{padding-bottom:12px}
+.admin-shell>.panel-form{margin:22px 0}
+.admin-status,.admin-section-title,.admin-row{display:flex;align-items:center;justify-content:space-between;gap:25px}
+.admin-status h3,.admin-section-title h3{margin:6px 0 0}
+.admin-switch{display:flex;align-items:center;gap:10px;margin:0;color:var(--ink)}
+.admin-switch input{width:20px;height:20px;accent-color:var(--pink)}
+.admin-section-title{padding-bottom:18px;border-bottom:1px solid var(--line)}
+.admin-section-title>span{font:11px "DM Mono",monospace;color:var(--muted)}
+.admin-list{display:grid}
+.admin-row{padding:18px 0;border-bottom:1px solid var(--line)}
+.admin-row:last-child{border-bottom:0}
+.admin-row>div:first-child{display:grid;gap:4px;min-width:0}
+.admin-row strong{font-size:15px}
+.admin-row span{font-size:11px;color:var(--muted)}
+.admin-row label{margin:0;display:flex;align-items:center;gap:10px}
+.admin-row select{min-width:145px;padding:10px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.contact-row{align-items:flex-start}
+.contact-row p{margin:8px 0 0;color:var(--muted);line-height:1.5}
+.contact-row .status-badge{color:var(--ink)}
+.admin-denied{min-height:60vh;display:grid;place-content:center;justify-items:start}
+.admin-denied h1{font-size:clamp(55px,8vw,100px)}
+
+@media(max-width:800px){
+  .account-actions,.admin-status,.admin-section-title,.admin-row{align-items:stretch;flex-direction:column}
+  .admin-intro{display:block}
+  .admin-intro .lede{margin-top:30px}
+  .admin-row label{justify-content:space-between}
+  .admin-row select{flex:1}
+}
