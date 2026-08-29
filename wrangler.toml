@@ -1,0 +1,24 @@
+name = "no-vibe-no-code"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "no-vibe-no-code"
+database_id = "e1eadd18-4e52-442f-ad9d-97e8aa635b95"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "PROFILE_IMAGES"
+bucket_name = "no-vibe-no-code-profile-images"
+
+[vars]
+COMPETITION_ACTIVE = "false"
+
+[[routes]]
+pattern = "novibenocode.ccwu.cc"
+custom_domain = true

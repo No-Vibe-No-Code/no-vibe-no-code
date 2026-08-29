@@ -1,0 +1,16 @@
+{
+  "name": "no-vibe-no-code",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "animejs": "^4.2.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.127.1"
+  }
+}
