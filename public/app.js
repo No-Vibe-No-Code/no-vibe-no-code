@@ -165,8 +165,9 @@ const flyText = (selector, config) => {
 
 /* ---------- Ink particle field ---------- */
 const field = document.getElementById("particleField");
-if (field) {
-  const context = field.getContext("2d");
+const fieldContext = field && field.getContext ? field.getContext("2d") : null;
+if (field && fieldContext) {
+  const context = fieldContext;
   const COUNT = 180;
   const NOZZLE = { x: -0.18, y: 0.46 };
   const points = Array.from({ length: COUNT }, (unused, index) => {
