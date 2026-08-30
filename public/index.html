@@ -12,7 +12,11 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
+  <body class="is-loading">
+    <div class="startup-loader" id="startupLoader" role="status" aria-live="polite" aria-label="Loading No Vibe No Code">
+      <span class="startup-loader__word">LOADING</span>
+      <span class="startup-loader__wipe" aria-hidden="true"></span>
+    </div>
     <canvas id="particleField" aria-hidden="true"></canvas>
     <header class="site-header">
       <a class="brand" href="#top" aria-label="No Vibe No Code home"><img src="/logo-symbol.png" alt="" /><span>No Vibe No Code</span></a>

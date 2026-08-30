@@ -73,7 +73,7 @@ html[lang="zh-CN"] .hero-copy h1{font-size:clamp(52px,6vw,88px);letter-spacing:-
 .dialog-close:hover{color:var(--pink);border-color:var(--pink);transform:rotate(90deg)}
 .fly-in-dialog[open]{animation:dialog-rise .55s cubic-bezier(.2,.8,.2,1) both}
 .fly-in-dialog[open]::backdrop{animation:backdrop-in .4s ease-out both}
-@keyframes dialog-rise{from{opacity:0;transform:translateY(100vh)}to{opacity:1;transform:translateY(0)}}
+@keyframes dialog-rise{from{transform:translateY(100vh)}to{transform:translateY(0)}}
 @keyframes backdrop-in{from{opacity:0}to{opacity:1}}
 .terms-summary{margin:22px 0 8px;padding:14px 16px;border:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:20px}
 .terms-summary>span{font:11px "DM Mono",monospace;color:var(--pink)}
@@ -95,6 +95,26 @@ html[lang="zh-CN"] .hero-copy h1{font-size:clamp(52px,6vw,88px);letter-spacing:-
 
 @media(prefers-reduced-motion:reduce){
   .fly-in-dialog[open],.fly-in-dialog[open]::backdrop{animation:none}
+}
+
+/* Startup curtain reveal */
+.startup-loader{position:fixed;inset:0;z-index:20;display:grid;place-items:center;overflow:hidden;background:var(--pink);color:#fff;isolation:isolate}
+.startup-loader__word{position:relative;z-index:2;font:600 clamp(4rem,15vw,13rem)/.8 "Space Grotesk",sans-serif;letter-spacing:-.09em;transition:color .18s ease}
+.startup-loader__wipe{position:absolute;z-index:1;inset:0;background:#fff;transform:translateX(-101%);animation:startup-wipe .5s cubic-bezier(.76,0,.24,1) .16s forwards}
+.startup-loader__wipe~.startup-loader__word{mix-blend-mode:normal}
+.startup-loader__word{animation:startup-word-color .5s cubic-bezier(.76,0,.24,1) .16s forwards}
+.startup-loader.is-exiting{animation:startup-exit .55s cubic-bezier(.76,0,.24,1) forwards;pointer-events:none}
+body.is-loading{overflow:hidden}
+main{overflow-x:clip}
+@keyframes startup-wipe{0%{transform:translateX(-101%)}100%{transform:translateX(101%)}}
+@keyframes startup-word-color{0%,28%{color:#fff}45%,100%{color:var(--pink)}}
+@keyframes startup-exit{0%{transform:translateY(0)}100%{transform:translateY(-101%)}}
+/* Per-character fly-in pieces */
+.split-word,.split-char{display:inline-block;white-space:pre}
+.split-char{backface-visibility:hidden}
+@media(prefers-reduced-motion:reduce){
+  .startup-loader{display:none}
+  body.is-loading{overflow:visible}
 }
 
 /* Account and administration */
