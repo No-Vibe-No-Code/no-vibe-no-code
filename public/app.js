@@ -1,10 +1,77 @@
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const animeEngine = window.anime;
 const startupLoader = document.getElementById("startupLoader");
 const startupStartedAt = performance.now();
 const introHooks = [];
 const onIntro = (hook) => introHooks.push(hook);
 let introStarted = false;
+const animationGroups = [];
+let animationFrame = 0;
+const easing = (name, value) => {
+  const match = /^out\((\d+)\)$/.exec(name || "");
+  return match ? 1 - Math.pow(1 - value, Number(match[1])) : value;
+};
+const stagger = (amount = 0, options = {}) => (target, index) =>
+  (options.start || 0) + amount * index;
+const renderAnimations = (time) => {
+  animationFrame = 0;
+  for (let index = animationGroups.length - 1; index >= 0; index -= 1) {
+    const group = animationGroups[index];
+    let groupActive = false;
+    group.items.forEach((item) => {
+      const progress = Math.max(0, Math.min(1, (time - item.startAt) / group.duration));
+      const eased = easing(group.ease, progress);
+      if (progress < 1) groupActive = true;
+      item.target.style.transform = item.transform(eased);
+    });
+    if (!groupActive && !group.completed) {
+      group.completed = true;
+      group.items.forEach((item) => {
+        item.target.style.willChange = "";
+      });
+      if (group.onComplete) group.onComplete();
+    }
+    if (!groupActive) animationGroups.splice(index, 1);
+  }
+  if (animationGroups.length) animationFrame = requestAnimationFrame(renderAnimations);
+};
+const animate = (targets, config) => {
+  const items = Array.from(targets || []).filter(Boolean);
+  if (!items.length) return;
+  const startAt = performance.now();
+  const duration = config.duration === undefined ? 950 : config.duration;
+  const group = {
+    duration,
+    ease: config.ease,
+    onComplete: config.onComplete,
+    completed: false,
+    items: items.map((target, index) => {
+      const resolve = (property) => {
+        const value = typeof config[property] === "function" ? config[property](target, index) : config[property];
+        return Array.isArray(value) ? value : [0, 0];
+      };
+      const translateX = resolve("translateX");
+      const translateY = resolve("translateY");
+      const rotate = resolve("rotate");
+      const hasTranslation = config.translateX !== undefined || config.translateY !== undefined;
+      const delay = typeof config.delay === "function" ? config.delay(target, index) : config.delay || 0;
+      target.style.willChange = "transform";
+      return {
+        target,
+        startAt: startAt + delay,
+        transform: (progress) => {
+          const x = translateX[0] + (translateX[1] - translateX[0]) * progress;
+          const y = translateY[0] + (translateY[1] - translateY[0]) * progress;
+          const rotation = rotate[0] + (rotate[1] - rotate[0]) * progress;
+          return hasTranslation
+            ? `translate3d(${x}px,${y}px,0) rotate(${rotation}deg)`
+            : `rotate(${rotation}deg)`;
+        }
+      };
+    })
+  };
+  animationGroups.push(group);
+  if (!animationFrame) animationFrame = requestAnimationFrame(renderAnimations);
+};
 const runIntro = () => {
   if (introStarted) return;
   introStarted = true;
@@ -21,7 +88,11 @@ const finishStartup = () => {
     document.body.classList.add("is-ready");
     if (!startupLoader) return;
     startupLoader.classList.add("is-exiting");
-    startupLoader.addEventListener("animationend", () => startupLoader.remove(), { once: true });
+    startupLoader.addEventListener("animationend", (event) => {
+      if (event.target === startupLoader && event.animationName === "startup-exit") {
+        startupLoader.remove();
+      }
+    }, { once: true });
   }, remaining);
 };
 if (reduceMotion) {
@@ -44,7 +115,7 @@ document.getElementById("langToggle").onclick = () => { lang = lang === "en" ? "
 setLanguage();
 /* ---------- Motion engine ---------- */
 /* Everything enters by flying in from outside the viewport. No opacity fades anywhere. */
-const animeReady = Boolean(animeEngine) && !reduceMotion;
+const animeReady = !reduceMotion;
 const CJK_PATTERN = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 const CHAR_SPLIT_LIMIT = 260;
 const DIRECTIONS = ["left", "right", "top", "bottom"];
@@ -132,7 +203,6 @@ const prepareFly = (nodes, config) => {
     };
   });
   items.forEach((node, index) => {
-    node.style.willChange = "transform";
     node.style.transform = `translate3d(${states[index].x}px,${states[index].y}px,0) rotate(${states[index].rotate}deg)`;
   });
   return { items, states };
@@ -142,12 +212,12 @@ const playFly = (prepared, config) => {
   if (!prepared) return;
   const items = prepared.items;
   const states = prepared.states;
-  animeEngine.animate(items, {
+  animate(items, {
     translateX: (target, index) => [states[index].x, 0],
     translateY: (target, index) => [states[index].y, 0],
     rotate: (target, index) => [states[index].rotate, 0],
     duration: config.duration === undefined ? 950 : config.duration,
-    delay: animeEngine.stagger(config.stagger === undefined ? 14 : config.stagger, { start: config.delay || 0 }),
+    delay: stagger(config.stagger === undefined ? 14 : config.stagger, { start: config.delay || 0 }),
     ease: config.ease || "out(4)",
     onComplete: () => items.forEach((node) => {
       node.style.transform = "";
@@ -168,128 +238,225 @@ const field = document.getElementById("particleField");
 const fieldContext = field && field.getContext ? field.getContext("2d") : null;
 if (field && fieldContext) {
   const context = fieldContext;
-  const COUNT = 180;
+  const getParticleCount = () => {
+    const area = window.innerWidth * window.innerHeight;
+    const density = window.innerWidth <= 640 ? 0.00014 : window.innerWidth <= 1024 ? 0.00017 : 0.0002;
+    return Math.round(Math.min(220, Math.max(72, area * density)));
+  };
+  const COUNT = getParticleCount();
   const NOZZLE = { x: -0.18, y: 0.46 };
-  const points = Array.from({ length: COUNT }, (unused, index) => {
+  const homeX = new Float32Array(COUNT);
+  const homeY = new Float32Array(COUNT);
+  const pointSize = new Uint8Array(COUNT);
+  const depth = new Float32Array(COUNT);
+  const phaseX = new Float32Array(COUNT);
+  const phaseY = new Float32Array(COUNT);
+  const speedX = new Float32Array(COUNT);
+  const speedY = new Float32Array(COUNT);
+  const ampX = new Float32Array(COUNT);
+  const ampY = new Float32Array(COUNT);
+  const startX = new Float32Array(COUNT);
+  const startY = new Float32Array(COUNT);
+  const controlX = new Float32Array(COUNT);
+  const controlY = new Float32Array(COUNT);
+  const delay = new Float32Array(COUNT);
+  const span = new Float32Array(COUNT);
+  const alpha = new Float32Array(COUNT);
+  for (let index = 0; index < COUNT; index += 1) {
     const hx = Math.random();
     const hy = Math.random();
+    const opacity = 0.14 + Math.random() * 0.25;
     const spread = randomBetween(-0.17, 0.17);
-    return {
-      hx,
-      hy,
-      size: index % 4 === 0 ? 5 : 3,
-      alpha: 0.14 + Math.random() * 0.25,
-      depth: 0.25 + Math.random() * 0.95,
-      phaseX: randomBetween(0, Math.PI * 2),
-      phaseY: randomBetween(0, Math.PI * 2),
-      speedX: randomBetween(0.05, 0.15),
-      speedY: randomBetween(0.05, 0.15),
-      ampX: randomBetween(0.004, 0.018),
-      ampY: randomBetween(0.012, 0.05),
-      startX: NOZZLE.x + randomBetween(-0.05, 0.02),
-      startY: NOZZLE.y + randomBetween(-0.05, 0.05),
-      controlX: NOZZLE.x + (hx - NOZZLE.x) * 0.32 + spread * 0.18,
-      controlY: NOZZLE.y + (hy - NOZZLE.y) * 0.26 + spread,
-      delay: Math.pow(Math.random(), 1.6) * 0.55,
-      span: randomBetween(0.85, 1.5)
-    };
-  });
-  const xs = new Float64Array(COUNT);
-  const ys = new Float64Array(COUNT);
-  const radii = new Float64Array(COUNT);
+    homeX[index] = hx;
+    homeY[index] = hy;
+    pointSize[index] = index % 4 === 0 ? 5 : 3;
+    depth[index] = 0.25 + Math.random() * 0.95;
+    phaseX[index] = randomBetween(0, Math.PI * 2);
+    phaseY[index] = randomBetween(0, Math.PI * 2);
+    speedX[index] = randomBetween(0.05, 0.15);
+    speedY[index] = randomBetween(0.05, 0.15);
+    ampX[index] = randomBetween(0.004, 0.018);
+    ampY[index] = randomBetween(0.012, 0.05);
+    startX[index] = NOZZLE.x + randomBetween(-0.05, 0.02);
+    startY[index] = NOZZLE.y + randomBetween(-0.05, 0.05);
+    controlX[index] = NOZZLE.x + (hx - NOZZLE.x) * 0.32 + spread * 0.18;
+    controlY[index] = NOZZLE.y + (hy - NOZZLE.y) * 0.26 + spread;
+    delay[index] = Math.pow(Math.random(), 1.6) * 0.55;
+    span[index] = randomBetween(0.85, 1.5);
+    alpha[index] = opacity;
+  }
+  const xs = new Float32Array(COUNT);
+  const ys = new Float32Array(COUNT);
+  const radii = new Float32Array(COUNT);
   const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
-  const resize = () => {
-    field.width = window.innerWidth * devicePixelRatio;
-    field.height = window.innerHeight * devicePixelRatio;
-    context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  const linkReach = 118;
+  const linkBuckets = 32;
+  const linkPaths = Array.from({ length: linkBuckets }, () => []);
+  const gridOffset = linkReach;
+  const gridNext = new Int32Array(COUNT);
+  const gridCellX = new Int32Array(COUNT);
+  const gridCellY = new Int32Array(COUNT);
+  const linkReachSquared = linkReach * linkReach;
+  const linkReachInverse = 1 / linkReach;
+  let gridColumns = 0;
+  let gridRows = 0;
+  let gridHead = new Int32Array(0);
+  let pixelRatio = 1;
+  let viewportWidth = window.innerWidth;
+  let viewportHeight = window.innerHeight;
+  const resizeGrid = (width, height) => {
+    gridColumns = Math.ceil((width + gridOffset * 2) / linkReach);
+    gridRows = Math.ceil((height + gridOffset * 2) / linkReach);
+    gridHead = new Int32Array(gridColumns * gridRows);
   };
-  resize();
-  window.addEventListener("resize", resize, { passive: true });
+  const resizeCanvas = () => {
+    viewportWidth = window.innerWidth;
+    viewportHeight = window.innerHeight;
+    pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    field.width = Math.round(viewportWidth * pixelRatio);
+    field.height = Math.round(viewportHeight * pixelRatio);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    resizeGrid(viewportWidth, viewportHeight);
+  };
+  resizeCanvas();
+  let resizeFrame = 0;
+  const queueResize = () => {
+    if (resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      resizeCanvas();
+    });
+  };
+  window.addEventListener("resize", queueResize, { passive: true });
   const easeOut = (value) => 1 - Math.pow(1 - value, 3);
   const bezier = (from, control, to, t) => {
     const inverse = 1 - t;
     return inverse * inverse * from + 2 * inverse * t * control + t * t * to;
   };
   const paint = (linkFactor) => {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    context.clearRect(0, 0, width, height);
+    context.clearRect(0, 0, viewportWidth, viewportHeight);
+    context.fillStyle = "#e83e83";
     for (let index = 0; index < COUNT; index += 1) {
-      context.fillStyle = `rgba(232,62,131,${points[index].alpha})`;
+      context.globalAlpha = alpha[index];
       context.beginPath();
       context.arc(xs[index], ys[index], radii[index], 0, Math.PI * 2);
       context.fill();
     }
+    context.globalAlpha = 1;
     if (linkFactor <= 0) return;
-    const reach = 118;
-    const reachSquared = reach * reach;
+    for (let bucket = 0; bucket < linkBuckets; bucket += 1) linkPaths[bucket].length = 0;
+    gridHead.fill(-1);
     for (let index = 0; index < COUNT; index += 1) {
-      for (let other = index + 1; other < COUNT; other += 1) {
-        const dx = xs[index] - xs[other];
-        const dy = ys[index] - ys[other];
-        const squared = dx * dx + dy * dy;
-        if (squared >= reachSquared) continue;
-        const distance = Math.sqrt(squared);
-        context.strokeStyle = `rgba(232,62,131,${0.075 * (1 - distance / reach) * linkFactor})`;
-        context.beginPath();
-        context.moveTo(xs[index], ys[index]);
-        context.lineTo(xs[other], ys[other]);
-        context.stroke();
+      let cellX = Math.floor((xs[index] + gridOffset) / linkReach);
+      let cellY = Math.floor((ys[index] + gridOffset) / linkReach);
+      if (cellX < 0) cellX = 0;
+      else if (cellX >= gridColumns) cellX = gridColumns - 1;
+      if (cellY < 0) cellY = 0;
+      else if (cellY >= gridRows) cellY = gridRows - 1;
+      gridCellX[index] = cellX;
+      gridCellY[index] = cellY;
+      const cell = cellY * gridColumns + cellX;
+      gridNext[index] = gridHead[cell];
+      gridHead[cell] = index;
+    }
+    for (let index = 0; index < COUNT; index += 1) {
+      const cellX = gridCellX[index];
+      const cellY = gridCellY[index];
+      const rowStart = cellY > 0 ? cellY - 1 : 0;
+      const rowEnd = cellY < gridRows - 1 ? cellY + 1 : cellY;
+      const columnStart = cellX > 0 ? cellX - 1 : 0;
+      const columnEnd = cellX < gridColumns - 1 ? cellX + 1 : cellX;
+      for (let row = rowStart; row <= rowEnd; row += 1) {
+        for (let column = columnStart; column <= columnEnd; column += 1) {
+          for (let other = gridHead[row * gridColumns + column]; other !== -1; other = gridNext[other]) {
+            if (other <= index) continue;
+            const dx = xs[index] - xs[other];
+            const dy = ys[index] - ys[other];
+            const squared = dx * dx + dy * dy;
+            if (squared >= linkReachSquared) continue;
+            const fade = (1 - Math.sqrt(squared) * linkReachInverse) * linkFactor;
+            const bucket = Math.min(linkBuckets - 1, Math.floor(fade * linkBuckets));
+            if (bucket <= 0) continue;
+            linkPaths[bucket].push(xs[index], ys[index], xs[other], ys[other]);
+          }
+        }
       }
+    }
+    for (let bucket = 1; bucket < linkBuckets; bucket += 1) {
+      const path = linkPaths[bucket];
+      if (!path.length) continue;
+      context.strokeStyle = `rgba(232,62,131,${0.075 * (bucket + 0.5) / linkBuckets})`;
+      context.beginPath();
+      for (let offset = 0; offset < path.length; offset += 4) {
+        context.moveTo(path[offset], path[offset + 1]);
+        context.lineTo(path[offset + 2], path[offset + 3]);
+      }
+      context.stroke();
     }
   };
   if (reduceMotion) {
     for (let index = 0; index < COUNT; index += 1) {
-      xs[index] = points[index].hx * window.innerWidth;
-      ys[index] = points[index].hy * window.innerHeight;
-      radii[index] = points[index].size;
+      xs[index] = homeX[index] * viewportWidth;
+      ys[index] = homeY[index] * viewportHeight;
+      radii[index] = pointSize[index];
     }
     paint(1);
   } else {
     let inkStart = null;
+    let lastPointerActivity = performance.now();
+    let renderFrame = 0;
     window.addEventListener("pointermove", (event) => {
       pointer.targetX = event.clientX / window.innerWidth - 0.5;
       pointer.targetY = event.clientY / window.innerHeight - 0.5;
+      lastPointerActivity = performance.now();
     }, { passive: true });
     document.documentElement.addEventListener("mouseleave", () => {
       pointer.targetX = 0;
       pointer.targetY = 0;
     });
     const render = (now) => {
+      renderFrame = 0;
+      if (document.visibilityState !== "visible") return;
       const seconds = now / 1000;
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const movementMultiplier = now - lastPointerActivity > 800 ? 3 : 1;
       pointer.x += (pointer.targetX - pointer.x) * 0.06;
       pointer.y += (pointer.targetY - pointer.y) * 0.06;
       const inkTime = inkStart === null ? null : (now - inkStart) / 1000;
+      const pointerOffsetX = pointer.x * 95;
+      const pointerOffsetY = pointer.y * 62;
       for (let index = 0; index < COUNT; index += 1) {
-        const point = points[index];
-        const homeX = point.hx + Math.sin(seconds * point.speedX + point.phaseX) * point.ampX;
-        const homeY = point.hy + Math.sin(seconds * point.speedY + point.phaseY) * point.ampY;
-        let nx = homeX;
-        let ny = homeY;
+        const particleHomeX = homeX[index] + Math.sin(seconds * speedX[index] * movementMultiplier + phaseX[index]) * ampX[index];
+        const particleHomeY = homeY[index] + Math.sin(seconds * speedY[index] * movementMultiplier + phaseY[index]) * ampY[index];
+        let nx = particleHomeX;
+        let ny = particleHomeY;
         let grow = 1;
         if (inkTime === null || inkTime < 0) {
-          nx = point.startX;
-          ny = point.startY;
+          nx = startX[index];
+          ny = startY[index];
           grow = 0.2;
-        } else if (inkTime < point.delay + point.span) {
-          const local = Math.max(0, Math.min(1, (inkTime - point.delay) / point.span));
+        } else if (inkTime < delay[index] + span[index]) {
+          const local = Math.max(0, Math.min(1, (inkTime - delay[index]) / span[index]));
           const eased = easeOut(local);
-          nx = bezier(point.startX, point.controlX, homeX, eased);
-          ny = bezier(point.startY, point.controlY, homeY, eased);
+          nx = bezier(startX[index], controlX[index], particleHomeX, eased);
+          ny = bezier(startY[index], controlY[index], particleHomeY, eased);
           grow = 0.2 + 0.8 * Math.min(1, local * 2.2);
         }
-        xs[index] = nx * width - pointer.x * 95 * point.depth;
-        ys[index] = ny * height - pointer.y * 62 * point.depth;
-        radii[index] = point.size * grow;
+        xs[index] = nx * viewportWidth - pointerOffsetX * depth[index];
+        ys[index] = ny * viewportHeight - pointerOffsetY * depth[index];
+        radii[index] = pointSize[index] * grow;
       }
       const linkFactor = inkTime === null ? 0 : Math.max(0, Math.min(1, (inkTime - 0.55) / 0.85));
       paint(linkFactor);
-      requestAnimationFrame(render);
+      renderFrame = requestAnimationFrame(render);
     };
-    requestAnimationFrame(render);
-    onIntro(() => { inkStart = performance.now() + 90; });
+    const scheduleRender = () => {
+      if (!renderFrame && document.visibilityState === "visible") renderFrame = requestAnimationFrame(render);
+    };
+    document.addEventListener("visibilitychange", scheduleRender, { passive: true });
+    onIntro(() => {
+      inkStart = performance.now() + 90;
+      scheduleRender();
+    });
   }
 }
 
@@ -319,7 +486,7 @@ onIntro(() => {
   const globe = document.querySelector(".globe-object");
   if (globe) {
     globe.style.transform = "rotate(-540deg)";
-    animeEngine.animate(globe, { rotate: [-540, 0], duration: 1700, delay: 180, ease: "out(4)" });
+    animate([globe], { rotate: [-540, 0], duration: 1700, delay: 180, ease: "out(4)" });
   }
 
   const revealPlan = [
@@ -352,18 +519,20 @@ onIntro(() => {
   const checkReveals = () => {
     checkQueued = false;
     const limit = window.innerHeight * 0.92;
+    const prepareLimit = window.innerHeight * 1.5;
     let pending = 0;
-    units.forEach((unit) => {
-      if (unit.done) return;
+    for (let index = units.length - 1; index >= 0; index -= 1) {
+      const unit = units[index];
       const rect = unit.element.getBoundingClientRect();
+      if (!unit.prepared && rect.top < prepareLimit) prepareUnit(unit);
       /* No bottom check: anything already scrolled past must still be released. */
       if (rect.top < limit) {
-        unit.done = true;
         playFly(unit.prepared, unit.config);
-        return;
+        units.splice(index, 1);
+        continue;
       }
       pending += 1;
-    });
+    }
     if (!pending) {
       window.removeEventListener("scroll", queueCheck);
       window.removeEventListener("resize", queueCheck);
@@ -377,8 +546,7 @@ onIntro(() => {
 
   revealPlan.forEach((plan) => {
     document.querySelectorAll(plan.selector).forEach((element, index) => {
-      const unit = { element, mode: plan.mode, done: false, config: Object.assign({}, plan.config, { dir: plan.dir(index) }) };
-      prepareUnit(unit);
+      const unit = { element, mode: plan.mode, config: Object.assign({}, plan.config, { dir: plan.dir(index) }) };
       units.push(unit);
     });
   });
@@ -388,51 +556,80 @@ onIntro(() => {
 
   onLanguageChange = () => {
     units.forEach((unit) => {
-      if (unit.done || unit.mode !== "text") return;
+      if (unit.mode !== "text") return;
       prepareUnit(unit);
     });
   };
 });
+const mobileTilt = window.matchMedia("(max-width: 800px), (pointer: coarse)").matches;
 const heroTilt = document.querySelector(".hero-tilt");
-if (heroTilt && !reduceMotion) {
+if (heroTilt && !reduceMotion && !mobileTilt) {
   const tilt = { x: 0, y: 0, targetX: 0, targetY: 0 };
+  let tiltFrame = 0;
+  const updateHeroTilt = () => {
+    tiltFrame = 0;
+    tilt.x += (tilt.targetX - tilt.x) * 0.075;
+    tilt.y += (tilt.targetY - tilt.y) * 0.075;
+    heroTilt.style.transform = `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translate3d(0, 0, 18px)`;
+    if (Math.abs(tilt.targetX - tilt.x) > 0.01 || Math.abs(tilt.targetY - tilt.y) > 0.01) {
+      tiltFrame = requestAnimationFrame(updateHeroTilt);
+    }
+  };
+  const queueHeroTilt = () => {
+    if (!tiltFrame) tiltFrame = requestAnimationFrame(updateHeroTilt);
+  };
   window.addEventListener("pointermove", (event) => {
     tilt.targetY = ((event.clientX / window.innerWidth) - 0.5) * 48;
     tilt.targetX = (0.5 - (event.clientY / window.innerHeight)) * 40;
+    queueHeroTilt();
   }, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => {
     tilt.targetX = 0;
     tilt.targetY = 0;
+    queueHeroTilt();
   });
-  const updateHeroTilt = () => {
-    tilt.x += (tilt.targetX - tilt.x) * 0.075;
-    tilt.y += (tilt.targetY - tilt.y) * 0.075;
-    heroTilt.style.transform = `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translate3d(0, 0, 18px)`;
-    requestAnimationFrame(updateHeroTilt);
-  };
   updateHeroTilt();
 }
 const prizeStage = document.querySelector(".prize-stage");
 const prizeStack = document.querySelector(".prize-stack");
-if (prizeStage && prizeStack && !reduceMotion) {
+if (prizeStage && prizeStack && !reduceMotion && !mobileTilt) {
   const cardTilt = { x: 0, y: 0, targetX: 0, targetY: 0 };
+  let prizeBounds = prizeStage.getBoundingClientRect();
+  let prizeBoundsFrame = 0;
+  const queuePrizeBounds = () => {
+    if (prizeBoundsFrame) return;
+    prizeBoundsFrame = requestAnimationFrame(() => {
+      prizeBoundsFrame = 0;
+      prizeBounds = prizeStage.getBoundingClientRect();
+    });
+  };
+  window.addEventListener("resize", queuePrizeBounds, { passive: true });
+  window.addEventListener("scroll", queuePrizeBounds, { passive: true });
+  let cardTiltFrame = 0;
+  const updateCardTilt = () => {
+    cardTiltFrame = 0;
+    cardTilt.x += (cardTilt.targetX - cardTilt.x) * 0.08;
+    cardTilt.y += (cardTilt.targetY - cardTilt.y) * 0.08;
+    prizeStack.style.transform = `rotateX(${cardTilt.x}deg) rotateY(${cardTilt.y}deg)`;
+    if (Math.abs(cardTilt.targetX - cardTilt.x) > 0.01 || Math.abs(cardTilt.targetY - cardTilt.y) > 0.01) {
+      cardTiltFrame = requestAnimationFrame(updateCardTilt);
+    }
+  };
+  const queueCardTilt = () => {
+    if (!cardTiltFrame) cardTiltFrame = requestAnimationFrame(updateCardTilt);
+  };
   window.addEventListener("pointermove", (event) => {
-    const bounds = prizeStage.getBoundingClientRect();
-    const horizontal = (event.clientX - (bounds.left + bounds.width / 2)) / Math.max(bounds.width / 2, 1);
-    const vertical = (event.clientY - (bounds.top + bounds.height / 2)) / Math.max(bounds.height / 2, 1);
+    const horizontal = (event.clientX - (prizeBounds.left + prizeBounds.width / 2)) / Math.max(prizeBounds.width / 2, 1);
+    const vertical = (event.clientY - (prizeBounds.top + prizeBounds.height / 2)) / Math.max(prizeBounds.height / 2, 1);
     cardTilt.targetY = Math.max(-1, Math.min(1, horizontal)) * 13;
     cardTilt.targetX = Math.max(-1, Math.min(1, -vertical)) * 10;
+    queueCardTilt();
   }, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => {
     cardTilt.targetX = 0;
     cardTilt.targetY = 0;
+    queueCardTilt();
   });
-  const updateCardTilt = () => {
-    cardTilt.x += (cardTilt.targetX - cardTilt.x) * 0.08;
-    cardTilt.y += (cardTilt.targetY - cardTilt.y) * 0.08;
-    prizeStack.style.transform = `rotateX(${cardTilt.x}deg) rotateY(${cardTilt.y}deg)`;
-    requestAnimationFrame(updateCardTilt);
-  };
   updateCardTilt();
 }
 const post = async (url, data) => { const response = await fetch(url, { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || "Request failed"); return result; };
@@ -552,6 +749,11 @@ loginForm.onsubmit = async (event) => {
     message.textContent = error.message;
   }
 };
-requestJson("/api/me").then(({ user }) => {
+const restoreAccount = () => requestJson("/api/me").then(({ user }) => {
   if (user) renderAccount(user);
 }).catch((error) => console.error("Could not restore account session", error));
+if (document.readyState === "complete") {
+  window.setTimeout(restoreAccount, 0);
+} else {
+  window.addEventListener("load", () => window.setTimeout(restoreAccount, 0), { once: true });
+}

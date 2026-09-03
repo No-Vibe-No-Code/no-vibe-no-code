@@ -1,4 +1,6 @@
-interface Env {
+import { workspaceApi } from "./workspace";
+
+export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   PROFILE_IMAGES: R2Bucket;
@@ -8,14 +10,15 @@ interface Env {
   COMPETITION_ACTIVE?: string;
 }
 
-const json = (data: unknown, init: ResponseInit = {}) =>
+export const json = (data: unknown, init: ResponseInit = {}) =>
   new Response(JSON.stringify(data), {
     ...init,
-    headers: { "content-type": "application/json; charset=utf-8", ...(init.headers || {}) },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...(init.headers || {}) },
   });
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+const slugify = (value: unknown) => String(value || "").toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
 
 async function hashPassword(password: string, salt = crypto.randomUUID()) {
   const bytes = new TextEncoder().encode(password);
@@ -41,7 +44,7 @@ async function currentUser(request: Request, env: Env) {
   const sessionId = request.headers.get("Cookie")?.match(/nvnc_session=([^;]+)/)?.[1];
   if (!sessionId) return null;
   return env.DB.prepare(
-    "SELECT u.id, u.display_name, u.english_name, u.chinese_name, u.wechat_id, u.class_grade, u.role, u.profile_image_key, u.is_initial_leader FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ?",
+    "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? AND u.status = 'active'",
   ).bind(sessionId, now()).first<any>();
 }
 
@@ -51,6 +54,13 @@ function validProfile(body: any) {
   );
 }
 
+function sameOrigin(request: Request) {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+  const origin = request.headers.get("Origin");
+  if (!origin) return true;
+  try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
+}
+
 async function ensureInitialLeader(env: Env, body: any) {
   const leaderName = env.INITIAL_LEADER_DISPLAY_NAME || env.INITIAL_LEADER_USERNAME;
   if (!leaderName || !env.INITIAL_LEADER_PASSWORD) return;
@@ -58,13 +68,15 @@ async function ensureInitialLeader(env: Env, body: any) {
   if (count?.count) return;
   if (body.displayName?.trim().toLowerCase() !== leaderName.trim().toLowerCase() || body.password !== env.INITIAL_LEADER_PASSWORD) return;
   const timestamp = now();
+  const userId = id();
   await env.DB.prepare(
-    "INSERT INTO users (id, display_name, english_name, chinese_name, wechat_id, class_grade, role, password_hash, terms_accepted_at, is_initial_leader, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'club-leader', ?, ?, 1, ?, ?)",
-  ).bind(id(), body.displayName, body.displayName, body.displayName, "—", "—", await hashPassword(body.password), timestamp, timestamp, timestamp).run();
+    "INSERT INTO users (id, display_name, english_name, chinese_name, wechat_id, class_grade, role, password_hash, terms_accepted_at, is_initial_leader, public_slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'club-leader', ?, ?, 1, ?, ?, ?)",
+  ).bind(userId, body.displayName, body.displayName, body.displayName, "-", "-", await hashPassword(body.password), timestamp, `${slugify(body.displayName) || "member"}-${userId.slice(0, 8)}`, timestamp, timestamp).run();
 }
 
-async function api(request: Request, env: Env) {
+async function legacyApi(request: Request, env: Env) {
   const url = new URL(request.url);
+  if (!sameOrigin(request)) return json({ error: "Cross-site request rejected." }, { status: 403 });
   const body = request.method === "POST" || request.method === "PUT" ? await request.json<any>() : {};
 
   if (url.pathname === "/api/auth/signup" && request.method === "POST") {
@@ -75,9 +87,9 @@ async function api(request: Request, env: Env) {
     const userId = id();
     try {
       await env.DB.prepare(
-        "INSERT INTO users (id, display_name, english_name, chinese_name, wechat_id, class_grade, role, password_hash, terms_accepted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(userId, body.displayName.trim(), body.englishName.trim(), body.chineseName.trim(), body.wechatId.trim(), body.classGrade.trim(), body.memberChoice === "member" ? "member" : "non-member", await hashPassword(body.password), timestamp, timestamp, timestamp).run();
-    } catch (error: any) {
+        "INSERT INTO users (id, display_name, english_name, chinese_name, wechat_id, class_grade, role, password_hash, terms_accepted_at, public_slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(userId, body.displayName.trim(), body.englishName.trim(), body.chineseName.trim(), body.wechatId.trim(), body.classGrade.trim(), body.memberChoice === "member" ? "member" : "non-member", await hashPassword(body.password), timestamp, `${slugify(body.displayName) || "member"}-${userId.slice(0, 8)}`, timestamp, timestamp).run();
+    } catch (error) {
       if (String(error).includes("UNIQUE")) return json({ error: "That display name is already taken." }, { status: 409 });
       throw error;
     }
@@ -86,23 +98,18 @@ async function api(request: Request, env: Env) {
 
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
     await ensureInitialLeader(env, body);
-    const user = await env.DB.prepare("SELECT * FROM users WHERE display_name = ? COLLATE NOCASE").bind(body.displayName?.trim()).first<any>();
+    const user = await env.DB.prepare("SELECT * FROM users WHERE display_name = ? COLLATE NOCASE AND status = 'active'").bind(body.displayName?.trim()).first<any>();
     if (!user || !(await verifyPassword(body.password || "", user.password_hash)))
       return json({ error: "Display name or password is incorrect." }, { status: 401 });
     const sessionId = id();
-    await env.DB.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").bind(sessionId, user.id, new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString()).run();
-    return json({ ok: true, user: { displayName: user.display_name, role: user.role } }, { headers: { "set-cookie": cookie("nvnc_session", sessionId, 60 * 60 * 24 * 30) } });
+    await env.DB.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").bind(sessionId, user.id, new Date(Date.now() + 2592000000).toISOString()).run();
+    return json({ ok: true, user: { displayName: user.display_name, role: user.role } }, { headers: { "set-cookie": cookie("nvnc_session", sessionId, 2592000) } });
   }
 
   if (url.pathname === "/api/auth/logout" && request.method === "POST") {
     const sessionId = request.headers.get("Cookie")?.match(/nvnc_session=([^;]+)/)?.[1];
     if (sessionId) await env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(sessionId).run();
     return json({ ok: true }, { headers: { "set-cookie": cookie("nvnc_session", "", 0) } });
-  }
-
-  if (url.pathname === "/api/me" && request.method === "GET") {
-    const user = await currentUser(request, env);
-    return json({ user: user ? { ...user, profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : null } : null });
   }
 
   if (url.pathname === "/api/contact" && request.method === "POST") {
@@ -112,13 +119,6 @@ async function api(request: Request, env: Env) {
   }
 
   const user = await currentUser(request, env);
-  if (url.pathname === "/api/profile" && request.method === "PUT") {
-    if (!user) return json({ error: "Please sign in." }, { status: 401 });
-    if (!body.englishName?.trim() || !body.chineseName?.trim() || !body.wechatId?.trim() || !body.classGrade?.trim()) return json({ error: "Please complete your profile." }, { status: 400 });
-    await env.DB.prepare("UPDATE users SET english_name = ?, chinese_name = ?, wechat_id = ?, class_grade = ?, updated_at = ? WHERE id = ?").bind(body.englishName.trim(), body.chineseName.trim(), body.wechatId.trim(), body.classGrade.trim(), now(), user.id).run();
-    return json({ ok: true });
-  }
-
   if (url.pathname === "/api/profile" && request.method === "DELETE") {
     if (!user) return json({ error: "Please sign in." }, { status: 401 });
     await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
@@ -129,7 +129,11 @@ async function api(request: Request, env: Env) {
     if (!user || !["club-leader", "teacher"].includes(user.role)) return json({ error: "Only club leaders and teachers can reset passwords." }, { status: 403 });
     if (typeof body.password !== "string" || body.password.length < 8) return json({ error: "Password must be at least 8 characters." }, { status: 400 });
     const targetId = url.pathname.split("/").at(-2);
-    await env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(body.password), now(), targetId).run();
+    const timestamp = now();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(body.password), timestamp, targetId),
+      env.DB.prepare("INSERT INTO admin_audit_log (id,actor_user_id,action,target_type,target_id,created_at) VALUES (?,?,'user.password-reset','user',?,?)").bind(id(), user.id, targetId, timestamp),
+    ]);
     return json({ ok: true });
   }
 
@@ -161,14 +165,30 @@ async function api(request: Request, env: Env) {
 
   if (url.pathname === "/api/admin/users" && request.method === "GET") {
     if (!user || !["club-leader", "teacher", "maintainer"].includes(user.role)) return json({ error: "Not authorized." }, { status: 403 });
-    return json({ users: await env.DB.prepare("SELECT id, display_name, english_name, chinese_name, class_grade, role, created_at FROM users ORDER BY created_at DESC").all() });
+    return json({ users: await env.DB.prepare("SELECT id, display_name, english_name, chinese_name, class_grade, role, status, public_slug, created_at FROM users ORDER BY created_at DESC LIMIT 500").all() });
   }
 
-  if (url.pathname.startsWith("/api/admin/users/") && request.method === "PUT") {
-    if (!user || !user.is_initial_leader) return json({ error: "Only the initial club leader can promote roles." }, { status: 403 });
+  if (/^\/api\/admin\/users\/[^/]+$/.test(url.pathname) && request.method === "PUT") {
     const targetId = url.pathname.split("/").pop();
-    if (!["non-member", "member", "maintainer", "club-leader", "teacher"].includes(body.role)) return json({ error: "Invalid role." }, { status: 400 });
-    await env.DB.prepare("UPDATE users SET role = ?, updated_at = ? WHERE id = ?").bind(body.role, now(), targetId).run();
+    const target = await env.DB.prepare("SELECT role,status,is_initial_leader FROM users WHERE id=?").bind(targetId).first<any>();
+    if (!target) return json({ error: "Member not found." }, { status: 404 });
+    const timestamp = now();
+    if (body.role !== undefined) {
+      if (!user?.is_initial_leader) return json({ error: "Only the initial club leader can promote roles." }, { status: 403 });
+      if (!["non-member", "member", "maintainer", "club-leader", "teacher"].includes(body.role)) return json({ error: "Invalid role." }, { status: 400 });
+      await env.DB.batch([
+        env.DB.prepare("UPDATE users SET role=?,updated_at=? WHERE id=?").bind(body.role,timestamp,targetId),
+        env.DB.prepare("INSERT INTO admin_audit_log (id,actor_user_id,action,target_type,target_id,details_json,created_at) VALUES (?,?,'user.role','user',?,?,?)").bind(id(),user.id,targetId,JSON.stringify({before:target.role,after:body.role}),timestamp),
+      ]);
+    } else if (body.status !== undefined) {
+      if (!user || !["club-leader", "teacher"].includes(user.role)) return json({ error: "Only club leaders and teachers can change account status." }, { status: 403 });
+      if (!["active","suspended","archived"].includes(body.status)) return json({ error: "Invalid account status." }, { status: 400 });
+      if (target.is_initial_leader || targetId === user.id) return json({ error: "This account cannot be suspended here." }, { status: 400 });
+      await env.DB.batch([
+        env.DB.prepare("UPDATE users SET status=?,updated_at=? WHERE id=?").bind(body.status,timestamp,targetId),
+        env.DB.prepare("INSERT INTO admin_audit_log (id,actor_user_id,action,target_type,target_id,details_json,created_at) VALUES (?,?,'user.status','user',?,?,?)").bind(id(),user.id,targetId,JSON.stringify({before:target.status,after:body.status}),timestamp),
+      ]);
+    } else return json({ error: "Role or status is required." }, { status: 400 });
     return json({ ok: true });
   }
 
@@ -191,7 +211,8 @@ export default {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
       try {
-        return await api(request, env);
+        const workspaceResponse = await workspaceApi(request, env);
+        return workspaceResponse || await legacyApi(request, env);
       } catch (error) {
         console.error(error);
         return json({ error: "Something went wrong. Please try again." }, { status: 500 });

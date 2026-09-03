@@ -1,41 +1,16 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#e83e83" />
-    <title>No Vibe No Code / Admin</title>
-    <link rel="icon" type="image/png" href="/logo-symbol.png" />
-    <link rel="apple-touch-icon" href="/logo-symbol.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body class="admin-page">
-    <header class="site-header">
-      <a class="brand" href="/"><img src="/logo-symbol.png" alt="" />No Vibe No Code</a>
-      <a class="outline-button" href="/">Back to site</a>
-    </header>
-    <main class="admin-shell">
-      <header class="admin-intro">
-        <div><p class="eyebrow">ADMIN / 001</p><h1>Club<br /><em>control.</em></h1></div>
-        <p class="lede">Manage member roles, reset passwords, review contact messages, and control competition registration.</p>
-      </header>
-      <p class="form-message" id="adminMessage" role="status"></p>
-      <section class="admin-status panel-form">
-        <div><p class="eyebrow">COMPETITION</p><h3>Registration status</h3></div>
-        <label class="admin-switch"><input id="competitionActive" type="checkbox" /><span>Allow competition actions</span></label>
-      </section>
-      <section class="panel-form">
-        <div class="admin-section-title"><div><p class="eyebrow">MEMBERS</p><h3>Accounts and roles</h3></div><span id="userCount"></span></div>
-        <div id="users" class="admin-list">Loading…</div>
-      </section>
-      <section class="panel-form">
-        <div class="admin-section-title"><div><p class="eyebrow">INBOX</p><h3>Contact messages</h3></div><span id="contactCount"></span></div>
-        <div id="contacts" class="admin-list">Loading…</div>
-      </section>
-    </main>
-    <script src="/admin.js"></script>
-  </body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1d2e61"><title>Admin dashboard / No Vibe No Code</title><link rel="icon" href="/logo-symbol-icon.png"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/product.css"><script defer src="/min/shared.js?v=20260902-7"></script><script defer src="/min/product-motion.js?v=20260902-8"></script><script defer src="/min/admin.js?v=20260902-8"></script></head>
+<body><div class="product-shell">
+  <aside class="product-sidebar"><a class="product-brand" href="/"><img src="/logo-symbol.webp" alt=""><span>No Vibe No Code</span></a><nav class="product-nav" aria-label="Admin navigation"><a href="#overview" aria-current="page"><span>Overview</span></a><a href="#members"><span>Members</span></a><a href="#forms"><span>Forms</span></a><a href="#projects"><span>Projects</span></a><a href="#broadcasts"><span>Broadcasts</span></a><a href="#settings"><span>Settings</span></a></nav><div class="sidebar-account"><strong data-account-name>Staff</strong><span>Administration</span><a href="/home.html">Member home</a><a href="/">Public site</a></div></aside>
+  <main class="product-main"><header class="product-topbar"><h1>Club administration</h1><div class="topbar-actions"><button class="secondary-button" id="newBroadcast">New broadcast</button><button class="primary-button" id="newForm">New form</button></div></header><div class="product-content">
+    <p class="status-message" id="adminMessage" role="status"></p>
+    <section id="overview"><header class="page-heading"><div><h2>Club control.</h2><p>Manage members, forms, projects, teams, and announcements without editing the website.</p></div></header><div class="overview-grid"><article class="metric"><span>ACTIVE MEMBERS</span><strong id="memberMetric">0</strong></article><article class="metric"><span>PENDING PROJECTS</span><strong id="projectMetric">0</strong></article><article class="metric"><span>OPEN FORMS</span><strong id="formMetric">0</strong></article></div></section>
+    <section class="panel" id="members" style="margin-top:22px"><header class="panel-header"><h3>Members</h3><span id="userCount"></span></header><div class="panel-body"><div class="toolbar"><input id="memberSearch" type="search" placeholder="Search members" aria-label="Search members"><select id="roleFilter"><option value="">All roles</option><option>member</option><option>non-member</option><option>maintainer</option><option>club-leader</option><option>teacher</option></select></div><div class="admin-list" id="users"><div class="skeleton"></div></div></div></section>
+    <section class="panel" id="forms" style="margin-top:22px"><header class="panel-header"><h3>Forms and signups</h3><button class="primary-button" data-new-form>Build form</button></header><div class="panel-body" id="formsList"><div class="skeleton"></div></div></section>
+    <section class="panel" id="projects" style="margin-top:22px"><header class="panel-header"><h3>Project review</h3></header><div class="panel-body" id="adminProjects"><div class="skeleton"></div></div></section>
+    <section class="panel" id="contacts" style="margin-top:22px"><header class="panel-header"><h3>Contact inbox</h3><span id="contactCount"></span></header><div class="panel-body" id="contactsList"><div class="skeleton"></div></div></section>
+    <section class="panel" id="settings" style="margin-top:22px"><header class="panel-header"><h3>Competition settings</h3></header><div class="panel-body"><label class="admin-switch"><input id="competitionActive" type="checkbox"><span>Allow competition actions</span></label></div></section>
+  </div></main>
+</div>
+<dialog id="formDialog" style="width:min(1080px,96vw);max-width:none"><button class="dialog-close" data-close="formDialog" aria-label="Close">×</button><form id="formBuilderForm" class="panel-form"><div class="form-grid"><div class="field"><label for="formTitle">Form title</label><input id="formTitle" required maxlength="150"></div><div class="field"><label for="formAccess">Who can respond</label><select id="formAccess"><option value="public">Anyone</option><option value="members">Members</option><option value="staff">Staff</option></select></div></div><div class="field"><label for="formDescription">Description</label><textarea id="formDescription" maxlength="1000"></textarea></div><div class="form-builder"><div class="question-list" id="questionList"></div><aside class="builder-tools panel-body panel"><strong>Add question</strong><button type="button" class="text-button" data-field-type="short-text">Short answer</button><button type="button" class="text-button" data-field-type="paragraph">Paragraph</button><button type="button" class="text-button" data-field-type="email">Email</button><button type="button" class="text-button" data-field-type="number">Number</button><button type="button" class="text-button" data-field-type="url">URL</button><button type="button" class="text-button" data-field-type="date">Date</button><button type="button" class="text-button" data-field-type="time">Time</button><button type="button" class="text-button" data-field-type="linear-scale">Linear scale</button><button type="button" class="text-button" data-field-type="single-choice">Multiple choice</button><button type="button" class="text-button" data-field-type="checkboxes">Checkboxes</button><button type="button" class="text-button" data-field-type="dropdown">Dropdown</button><button type="button" class="text-button" data-field-type="consent">Consent</button></aside></div><p class="status-message" id="formBuilderMessage"></p><div class="form-actions"><button type="button" class="secondary-button" id="saveFormDraft">Save draft</button><button type="button" class="primary-button" id="publishForm">Publish form</button></div></form></dialog>
+<dialog id="broadcastDialog"><button class="dialog-close" data-close="broadcastDialog" aria-label="Close">×</button><form id="broadcastForm" class="panel-form"><h3>Send broadcast</h3><div class="field"><label for="broadcastTitle">Title</label><input id="broadcastTitle" name="title" required maxlength="150"></div><div class="field"><label for="broadcastBody">Message</label><textarea id="broadcastBody" name="body" required maxlength="5000"></textarea></div><div class="field"><label for="audienceType">Audience</label><select id="audienceType" name="audienceType"><option value="all">All active users</option><option value="role">One role</option></select></div><div class="field hidden" id="audienceRoleField"><label for="audienceValue">Role</label><select id="audienceValue" name="audienceValue"><option>member</option><option>non-member</option><option>maintainer</option><option>club-leader</option><option>teacher</option></select></div><p class="status-message" id="broadcastMessage"></p><div class="form-actions"><button class="primary-button">Send broadcast</button></div></form></dialog>
+</body></html>

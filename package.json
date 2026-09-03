@@ -4,11 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "check": "wrangler deploy --dry-run"
-  },
-  "dependencies": {
-    "animejs": "^4.2.2"
+    "build:assets": "esbuild public/app.js public/admin.js public/shared.js public/product-motion.js public/home.js public/profile.js public/gallery.js public/form.js public/project.js --minify --format=iife --outdir=public/min --entry-names=[name]",
+    "deploy": "npm run build:assets && wrangler deploy",
+    "check": "npm run build:assets && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.127.1"

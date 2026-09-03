@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#1d2e61"><title>Member home / No Vibe No Code</title>
+  <link rel="icon" href="/logo-symbol-icon.png"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/product.css">
+  <script defer src="/min/shared.js?v=20260902-7"></script><script defer src="/min/product-motion.js?v=20260902-8"></script><script defer src="/min/home.js?v=20260902-8"></script>
+</head>
+<body>
+<div class="product-shell">
+  <aside class="product-sidebar">
+    <a class="product-brand" href="/"><img src="/logo-symbol.webp" alt=""><span>No Vibe No Code</span></a>
+    <nav class="product-nav" aria-label="Member navigation">
+      <a href="/home.html" aria-current="page"><span>Home</span></a>
+      <a href="/gallery.html"><span>Gallery</span></a>
+      <a href="#projects"><span>Projects</span></a>
+      <a href="#teams"><span>Teams</span></a>
+      <button type="button" id="notificationNav"><span>Notifications</span><span class="nav-count hidden" data-notification-count></span></button>
+    </nav>
+    <div class="sidebar-account"><strong data-account-name>Loading</strong><span>Club member</span><a href="/">Public site</a></div>
+  </aside>
+  <main class="product-main">
+    <header class="product-topbar"><h1>Member home</h1><div class="topbar-actions"><button class="secondary-button" id="editProfile">Edit profile</button><button class="text-button" id="notificationButton">Inbox <span class="notification-count hidden" data-notification-count></span></button></div></header>
+    <div class="product-content">
+      <header class="page-heading"><div><h2 id="welcome">Welcome back.</h2><p>Your projects, teams, invitations, and club updates in one place.</p></div><button class="primary-button" id="newProject">New project</button></header>
+      <section class="overview-grid" aria-label="Workspace summary">
+        <article class="metric"><span>PROJECTS</span><strong id="projectCount">0</strong></article>
+        <article class="metric"><span>TEAMS</span><strong id="teamCount">0</strong></article>
+        <article class="metric"><span>UNREAD</span><strong id="unreadCount">0</strong></article>
+      </section>
+      <div class="workspace-grid">
+        <section class="panel" id="projects"><header class="panel-header"><h3>Your projects</h3><button class="text-button" id="newProjectSecondary">Create project</button></header><div class="panel-body stack" id="projectList"><div class="skeleton"></div><div class="skeleton"></div></div></section>
+        <aside class="stack">
+          <section class="panel" id="teams"><header class="panel-header"><h3>Your teams</h3><button class="text-button" id="newTeam">Create</button></header><div class="panel-body" id="teamList"><div class="skeleton"></div></div></section>
+          <section class="panel"><header class="panel-header"><h3>Invitations</h3></header><div class="panel-body" id="invitationList"><div class="skeleton"></div></div></section>
+        </aside>
+      </div>
+      <section class="panel hidden" id="notificationPanel" style="margin-top:18px"><header class="panel-header"><h3>Notifications</h3><button class="text-button" id="markAllRead">Mark all read</button></header><div class="panel-body notification-list" id="notificationList"></div></section>
+      <section class="panel hidden" id="teamDetail" style="margin-top:18px"><header class="panel-header"><h3 id="teamDetailName">Team</h3><button class="text-button" id="closeTeamDetail">Close</button></header><div class="panel-body"><div id="teamMembers" class="stack"></div><form id="inviteForm" class="toolbar hidden"><input name="displayName" required placeholder="Member display name" aria-label="Member display name"><button class="primary-button">Invite member</button></form><p class="status-message" id="inviteMessage"></p></div></section>
+    </div>
+  </main>
+</div>
+<nav class="mobile-nav" aria-label="Mobile navigation"><a href="/home.html">Home</a><a href="/gallery.html">Gallery</a><a href="#projects">Projects</a><a href="#teams">Teams</a></nav>
+<dialog id="projectDialog"><button class="dialog-close" data-close="projectDialog" aria-label="Close">×</button><form id="projectForm" class="panel-form"><h3>Create project</h3><div class="field"><label for="projectTitle">Title</label><input id="projectTitle" name="title" required maxlength="100"></div><div class="field"><label for="projectSummary">Summary</label><textarea id="projectSummary" name="summary" required maxlength="300"></textarea></div><div class="field"><label for="projectVisibility">Visibility</label><select id="projectVisibility" name="visibility"><option value="private">Private</option><option value="members">Members</option><option value="public">Public</option></select></div><p class="status-message" id="projectMessage"></p><div class="form-actions"><button class="primary-button">Create draft</button></div></form></dialog>
+<dialog id="teamDialog"><button class="dialog-close" data-close="teamDialog" aria-label="Close">×</button><form id="teamForm" class="panel-form"><h3>Create team</h3><div class="field"><label for="teamName">Team name</label><input id="teamName" name="name" required maxlength="80"></div><div class="field"><label for="teamDescription">Description</label><textarea id="teamDescription" name="description" maxlength="300"></textarea></div><p class="status-message" id="teamMessage"></p><div class="form-actions"><button class="primary-button">Create team</button></div></form></dialog>
+</body></html>

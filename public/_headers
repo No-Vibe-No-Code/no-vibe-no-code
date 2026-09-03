@@ -1,0 +1,26 @@
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/logo-symbol.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/logo-symbol-icon.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/2b52990138f4d51f21187542d3079d3c.txt
+  Cache-Control: public, max-age=31536000, immutable
+
+/starbucks-logo.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.html
+  Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+
+/styles.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/product.css
+  Cache-Control: public, max-age=31536000, immutable
+
+/min/*
+  Cache-Control: public, max-age=31536000, immutable
