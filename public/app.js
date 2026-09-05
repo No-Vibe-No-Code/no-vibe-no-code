@@ -238,6 +238,9 @@ const field = document.getElementById("particleField");
 const fieldContext = field && field.getContext ? field.getContext("2d") : null;
 if (field && fieldContext) {
   const context = fieldContext;
+  const brandStyle = getComputedStyle(document.documentElement);
+  const particleColor = brandStyle.getPropertyValue("--accent").trim();
+  const particleRgb = brandStyle.getPropertyValue("--accent-rgb").trim();
   const getParticleCount = () => {
     const area = window.innerWidth * window.innerHeight;
     const density = window.innerWidth <= 640 ? 0.00014 : window.innerWidth <= 1024 ? 0.00017 : 0.0002;
@@ -335,7 +338,7 @@ if (field && fieldContext) {
   };
   const paint = (linkFactor) => {
     context.clearRect(0, 0, viewportWidth, viewportHeight);
-    context.fillStyle = "#e83e83";
+    context.fillStyle = particleColor;
     for (let index = 0; index < COUNT; index += 1) {
       context.globalAlpha = alpha[index];
       context.beginPath();
@@ -385,7 +388,7 @@ if (field && fieldContext) {
     for (let bucket = 1; bucket < linkBuckets; bucket += 1) {
       const path = linkPaths[bucket];
       if (!path.length) continue;
-      context.strokeStyle = `rgba(232,62,131,${0.075 * (bucket + 0.5) / linkBuckets})`;
+      context.strokeStyle = `rgba(${particleRgb},${0.075 * (bucket + 0.5) / linkBuckets})`;
       context.beginPath();
       for (let offset = 0; offset < path.length; offset += 4) {
         context.moveTo(path[offset], path[offset + 1]);
@@ -707,7 +710,7 @@ const fileDataUrl = (file) => new Promise((resolve, reject) => {
 const renderAccount = (user) => {
   const privileged = ["club-leader", "teacher", "maintainer"].includes(user.role);
   accountButton.textContent = user.display_name;
-  accountContent.innerHTML = `<p class="eyebrow">ACCOUNT / 001</p><h3>${escapeHtml(user.display_name)}</h3><p class="account-role">${escapeHtml(user.role)}</p>${privileged ? `<a class="pink-button account-admin-link" href="/admin.html">${lang === "zh" ? "打开管理面板 ↗" : "Open admin dashboard ↗"}</a>` : ""}<form id="profileForm" class="panel-form"><label>English name<input name="englishName" value="${escapeHtml(user.english_name)}" required></label><label>中文名<input name="chineseName" value="${escapeHtml(user.chinese_name)}" required></label><label>WeChat ID<input name="wechatId" value="${escapeHtml(user.wechat_id)}" required></label><label>Class + grade<input name="classGrade" value="${escapeHtml(user.class_grade)}" required></label><label>Profile image<input type="file" name="image" accept="image/png,image/jpeg,image/webp"></label><button class="pink-button">Save profile</button><p class="form-message" id="profileMessage"></p></form><div class="account-actions"><button class="outline-button" id="deleteAccount">${lang === "zh" ? "删除账号" : "Delete account"}</button><button class="pink-button" id="logout">${lang === "zh" ? "退出登录" : "Sign out"}</button></div>`;
+  accountContent.innerHTML = `<p class="eyebrow">ACCOUNT / 001</p><h3>${escapeHtml(user.display_name)}</h3><p class="account-role">${escapeHtml(user.role)}</p>${privileged ? `<a class="accent-button account-admin-link" href="/admin.html">${lang === "zh" ? "打开管理面板 ↗" : "Open admin dashboard ↗"}</a>` : ""}<form id="profileForm" class="panel-form"><label>English name<input name="englishName" value="${escapeHtml(user.english_name)}" required></label><label>中文名<input name="chineseName" value="${escapeHtml(user.chinese_name)}" required></label><label>WeChat ID<input name="wechatId" value="${escapeHtml(user.wechat_id)}" required></label><label>Class + grade<input name="classGrade" value="${escapeHtml(user.class_grade)}" required></label><label>Profile image<input type="file" name="image" accept="image/png,image/jpeg,image/webp"></label><button class="accent-button">Save profile</button><p class="form-message" id="profileMessage"></p></form><div class="account-actions"><button class="outline-button" id="deleteAccount">${lang === "zh" ? "删除账号" : "Delete account"}</button><button class="accent-button" id="logout">${lang === "zh" ? "退出登录" : "Sign out"}</button></div>`;
   document.getElementById("profileForm").onsubmit = async (event) => {
     event.preventDefault();
     const message = document.getElementById("profileMessage");

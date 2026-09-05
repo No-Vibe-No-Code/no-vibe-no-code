@@ -130,6 +130,31 @@ The included Wrangler configuration targets the custom domain
 
 ## Brand notice
 
+### Nachoneko-inspired light blue palette
+
+The website, member portal, logo, and recruitment poster share an icy-white,
+sky-blue, and deep-blue color system. Layouts, typography, and the existing
+logo geometry are unchanged.
+
+| Role | Color | Usage |
+| --- | --- | --- |
+| Sky | `#8ECDF2` | Primary button fills, highlights on dark panels, browser theme |
+| Accent | `#216B9B` | Links, headings, focus borders, particle field |
+| Ink | `#203A54` | Body text, dark panels, text on sky-blue buttons |
+| Mist / ice | `#D5EBFA` / `#F1F8FD` | Decorative accents and quiet backgrounds |
+| Muted | `#5B7187` | Secondary text |
+
+`public/brand.css` owns the shared palette and is loaded before both UI
+stylesheets. Use dark ink on sky-blue fills, not white text; use sky blue on
+dark panels and the darker accent for text on white. Success, warning, and
+danger colors retain their semantic meaning; the Starbucks prize artwork
+retains its original green.
+
+The recolored [poster](public/poster-light-blue.png) preserves the source
+dimensions, wording, and QR-code pixels. The existing logo and favicon assets
+are recolored without changing their shape. Asset URLs include a palette
+version so returning visitors receive the updated colors.
+
 The Starbucks name and logo belong to Starbucks Corporation. They are displayed
 only in the competition prize mockup and do not imply sponsorship or
 endorsement.

@@ -1,0 +1,17 @@
+:root {
+  color-scheme: light;
+  --ink: #203a54;
+  --muted: #5b7187;
+  --accent: #216b9b;
+  --sky: #8ecdf2;
+  --mist: #d5ebfa;
+  --line: #d5e3ee;
+  --paper: #fff;
+  --soft: #f1f8fd;
+  --accent-rgb: 33, 107, 155;
+}
+
+::selection {
+  background: var(--mist);
+  color: var(--ink);
+}

@@ -19,6 +19,9 @@
 /styles.css
   Cache-Control: public, max-age=31536000, immutable
 
+/brand.css
+  Cache-Control: public, max-age=31536000, immutable
+
 /product.css
   Cache-Control: public, max-age=31536000, immutable
 
