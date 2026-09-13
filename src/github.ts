@@ -26,6 +26,15 @@ export type GithubSnapshot = {
   syncedAt: string;
 };
 
+export type GithubPreviousSnapshot = {
+  etag?: string;
+  html?: string;
+  defaultBranch?: string;
+  avatarUrl?: string;
+  name?: string;
+  bio?: string;
+};
+
 const allowedTags = new Set([
   "a", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2", "h3", "h4", "h5", "h6",
   "hr", "img", "li", "ol", "p", "pre", "s", "small", "span", "strong", "summary", "table", "tbody", "td",
@@ -185,21 +194,33 @@ async function githubJson(url: string) {
   return response.json<any>();
 }
 
-export async function fetchGithubSnapshot(profileUrl: string, previous: { etag?: string; html?: string } = {}): Promise<GithubSnapshot> {
+export async function fetchGithubSnapshot(profileUrl: string, previous: GithubPreviousSnapshot = {}): Promise<GithubSnapshot> {
   const profile = parseGithubProfileUrl(profileUrl);
   if (!profile) throw new Error("Use a public GitHub profile URL such as https://github.com/UnoxyRich.");
   const encodedUsername = encodeURIComponent(profile.username);
-  const [githubUser, repository] = await Promise.all([
-    githubJson(`${GITHUB_API}/users/${encodedUsername}`),
-    githubJson(`${GITHUB_API}/repos/${encodedUsername}/${encodedUsername}`),
-  ]);
-  if (repository.private || repository.archived) throw new Error("The matching GitHub profile repository must be public and active.");
-  const branch = String(repository.default_branch || "main");
-  const context = renderContext(profile.username, profile.username, branch);
-  const readmeUrl = `${context.rawBase}README.md`;
-  const headers: Record<string, string> = { "user-agent": GITHUB_USER_AGENT };
+  let githubUser: any = { avatar_url: previous.avatarUrl || "", name: previous.name || "", bio: previous.bio || "" };
+  let branch = previous.defaultBranch || "";
+  if (!branch) {
+    const [fetchedUser, repository] = await Promise.all([
+      githubJson(`${GITHUB_API}/users/${encodedUsername}`),
+      githubJson(`${GITHUB_API}/repos/${encodedUsername}/${encodedUsername}`),
+    ]);
+    if (repository.private || repository.archived) throw new Error("The matching GitHub profile repository must be public and active.");
+    githubUser = fetchedUser;
+    branch = String(repository.default_branch || "main");
+  }
+  let context = renderContext(profile.username, profile.username, branch);
+  let headers: Record<string, string> = { "user-agent": GITHUB_USER_AGENT };
   if (previous.etag) headers["if-none-match"] = previous.etag;
-  const response = await fetch(readmeUrl, { headers });
+  let response = await fetch(`${context.rawBase}README.md`, { headers });
+  if (response.status === 404 && previous.defaultBranch) {
+    const repository = await githubJson(`${GITHUB_API}/repos/${encodedUsername}/${encodedUsername}`);
+    if (repository.private || repository.archived) throw new Error("The matching GitHub profile repository must be public and active.");
+    branch = String(repository.default_branch || "main");
+    context = renderContext(profile.username, profile.username, branch);
+    headers = { "user-agent": GITHUB_USER_AGENT };
+    response = await fetch(`${context.rawBase}README.md`, { headers });
+  }
   const syncedAt = new Date().toISOString();
   if (response.status === 304 && previous.html) {
     return {

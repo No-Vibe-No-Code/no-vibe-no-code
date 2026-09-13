@@ -177,6 +177,10 @@ main{overflow-x:clip}
 .make-list>div{display:flex;align-items:baseline;gap:18px;padding:21px 0;border-bottom:1px solid var(--line)}
 .make-list b{font:11px "DM Mono",monospace;color:var(--pink)}
 .make-list strong{font-size:18px;font-weight:500}
+.make-intro{min-width:0}
+.make-mascot{position:relative;max-width:430px;margin:34px 0 0;isolation:isolate}
+.make-mascot img{display:block;width:100%;height:auto;filter:drop-shadow(0 18px 26px #203a5424)}
+.make-mascot figcaption{margin-top:-4px;color:var(--muted);font:10px "DM Mono",monospace;letter-spacing:.08em;text-transform:uppercase}
 .rhythm-note{max-width:32ch;color:var(--muted);font-size:15px;line-height:1.55}
 .competition-note{border-left:2px solid var(--hot);padding-left:15px;margin-top:30px;color:#fff!important}
 .prize-note{border:1px solid #ffffff55;padding:28px;background:#ffffff0c;display:grid;gap:14px;min-height:230px;align-content:center}
@@ -199,6 +203,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .join-side{padding-top:55px}
   .join-mini{margin-top:45px}
   .make-section{display:block;padding-top:78px;padding-bottom:78px}
+  .make-mascot{max-width:360px;margin:36px auto 0}
   .make-list{margin-top:42px}
   .make-list strong{font-size:16px}
   .prize-note{min-height:0}

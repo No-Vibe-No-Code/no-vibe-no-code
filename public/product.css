@@ -71,3 +71,29 @@ dialog[open]::backdrop{animation:product-backdrop-in var(--motion-fast) ease-out
 .readme ul,.readme ol{padding-left:26px}
 .readme li+li{margin-top:5px}
 .readme a{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.profile-rail{display:grid;gap:22px;margin-top:26px}
+.profile-rail-section{border-top:1px solid var(--line);padding-top:14px}
+.profile-rail-section h3{margin:0 0 8px;color:var(--muted);font:10px "DM Mono",monospace;letter-spacing:.1em;text-transform:uppercase}
+.site-mascot-badge{position:fixed;right:22px;bottom:20px;width:118px;z-index:8;pointer-events:none;filter:drop-shadow(0 12px 20px #203a5430)}
+.site-mascot-badge img{display:block;width:100%;height:auto;transform:rotate(3deg)}
+.profile-links,.profile-teams,.profile-contacts{display:grid;gap:2px}
+.profile-link-row,.profile-team-row,.profile-contact-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:8px 0;color:var(--ink);font-size:13px}
+.profile-link-row:hover,.profile-contact-row:hover{color:var(--accent)}
+.profile-link-mark{display:grid;place-items:center;width:25px;height:25px;color:var(--accent)}
+.profile-link-mark--youtube{color:#d85d74}.profile-link-mark--douyin{color:#2d536c}.profile-link-mark--xiaohongshu{color:#c85c7c}.profile-link-mark--x{color:#203a54}.profile-link-mark--wechat{color:#4e9f85}.profile-link-mark--mail{color:#216b9b}.profile-link-mark--teams{color:#6d83a0}
+.profile-link-icon{display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.profile-link-mark--github .profile-link-icon{fill:currentColor;stroke:none}
+.profile-link-arrow{color:var(--muted);font-size:14px;transition:transform var(--motion-fast) var(--motion-ease)}
+.profile-link-row:hover .profile-link-arrow{transform:translate(2px,-2px);color:var(--accent)}
+.profile-team-row{grid-template-columns:28px minmax(0,1fr)}
+.profile-team-row strong,.profile-team-row small,.profile-contact-row strong,.profile-contact-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-team-row small,.profile-contact-row small{margin-top:2px;color:var(--muted);font:10px "DM Mono",monospace;text-transform:uppercase}
+.profile-contact-row strong{font-weight:500}
+.field-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.field-heading label{margin:0}
+.links-editor{display:grid;gap:8px}
+.link-editor-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(180px,1.5fr) auto;align-items:center;gap:8px}
+.link-editor-row input{min-width:0}
+.link-editor-row .remove-link{min-width:40px;padding:7px 10px}
+@media(max-width:700px){.link-editor-row{grid-template-columns:minmax(0,1fr) auto}.link-editor-row .link-url-input{grid-column:1/-1}.profile-rail{gap:18px}}
+@media(max-width:700px){.site-mascot-badge{right:14px;bottom:78px;width:84px}}

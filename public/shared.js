@@ -3,6 +3,11 @@ document.querySelectorAll('img[src="/logo-symbol.webp"],link[href="/logo-symbol-
   const attribute = element.tagName === "LINK" ? "href" : "src";
   element.setAttribute(attribute, `${element.getAttribute(attribute)}?v=20260913-sky`);
 });
+const mascotBadge = document.createElement("aside");
+mascotBadge.className = "site-mascot-badge";
+mascotBadge.setAttribute("aria-label", "Nachoneko mascot");
+mascotBadge.innerHTML = '<img src="/nachoneko-anything.png?v=20260913-nacho-v4" width="1222" height="1287" loading="lazy" decoding="async" alt="">';
+document.body.append(mascotBadge);
 const requestJson = async (url, options = {}) => {
   const response = await fetch(url, options);
   const result = await response.json().catch(() => ({}));
