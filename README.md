@@ -19,6 +19,7 @@ members, and gives club leaders a lightweight administration surface.
 - Member and non-member registration with timed terms acceptance
 - Secure account sessions and editable member profiles
 - PNG, JPEG, and WebP profile-image uploads
+- Optional GitHub profile README mirroring with image/link resolution and ETag refreshes
 - Role-aware administration for leaders, teachers, and maintainers
 - Cloudflare-native storage with D1 and R2
 
@@ -42,13 +43,17 @@ Browser
 ├── Static site ─────────────── Cloudflare Workers Static Assets
 └── /api requests ───────────── Worker router (src/index.ts)
                                 ├── users, sessions, settings ── D1
+                                ├── GitHub README snapshots ──── D1
                                 └── profile images ───────────── R2
 ```
 
 The Worker serves static files from `public/` and handles all `/api/*` routes.
 Passwords are derived with PBKDF2-SHA-256 before storage. Session identifiers
 are stored in D1 and sent only through `Secure`, `HttpOnly`, `SameSite=Lax`
-cookies.
+cookies. A member can opt into mirroring the public `README.md` from their
+same-name GitHub profile repository. Enabled mirrors refresh on public profile
+reads with conditional GitHub requests and keep the last successful snapshot
+when GitHub is unavailable.
 
 ## Local development
 
@@ -116,6 +121,7 @@ The included Wrangler configuration targets the custom domain
 │   ├── index.html          Main website and account dialogs
 │   └── styles.css          Responsive layout and visual system
 ├── src/index.ts            Worker API and static-asset router
+├── src/github.ts            GitHub fetching, URL resolution, and safe rendering
 ├── package.json            Scripts and dependencies
 └── wrangler.toml           Cloudflare bindings and deployment configuration
 ```

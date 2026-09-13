@@ -1,5 +1,6 @@
 import type { Env } from "./index";
 import { csrfValid, json } from "./index";
+import { fetchGithubSnapshot, parseGithubProfileUrl } from "./github";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -11,6 +12,7 @@ const parsed = (value: unknown, fallback: unknown) => {
 };
 const isUrl = (value: unknown) => !value || (typeof value === "string" && value.length <= 500 && /^https?:\/\//i.test(value));
 const limitOf = (url: URL) => Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 20));
+const GITHUB_REFRESH_MS = 10 * 60 * 1000;
 
 async function userFor(request: Request, env: Env) {
   const sessionId = request.headers.get("Cookie")?.match(/nvnc_session=([^;]+)/)?.[1];
@@ -26,23 +28,78 @@ function sameOrigin(request: Request) {
   try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
 }
 
-function publicUser(user: any) {
+function publicGithub(user: any, includeReadme = false) {
+  if (!user.github_profile_url) return null;
+  return {
+    profileUrl: user.github_profile_url,
+    username: user.github_username || parseGithubProfileUrl(user.github_profile_url)?.username || "",
+    name: user.github_name || "",
+    bio: user.github_bio || "",
+    avatarUrl: user.github_avatar_url || null,
+    enabled: Boolean(user.github_readme_enabled),
+    readmeHtml: includeReadme && user.github_readme_enabled ? user.github_readme_html || "" : "",
+    syncedAt: user.github_synced_at || null,
+  };
+}
+
+function publicUser(user: any, includeGithubReadme = false) {
   return {
     displayName: user.display_name,
     slug: user.public_slug,
-    bio: user.bio,
+    bio: user.bio || user.github_bio || "",
     skills: parsed(user.skills_json, []),
     links: parsed(user.links_json, []),
     readme: user.readme_published,
-    profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : null,
+    profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : user.github_avatar_url || null,
+    github: publicGithub(user, includeGithubReadme),
     joinedAt: user.created_at,
   };
+}
+
+async function saveGithubError(env: Env, user: any, error: unknown) {
+  const syncedAt = now();
+  const message = String(error instanceof Error ? error.message : error || "GitHub sync failed.").slice(0, 240);
+  await env.DB.prepare("UPDATE users SET github_synced_at=?, github_sync_error=? WHERE id=?").bind(syncedAt, message, user.id).run();
+  return { ...user, github_synced_at: syncedAt, github_sync_error: message };
+}
+
+async function syncGithubProfile(env: Env, user: any) {
+  const snapshot = await fetchGithubSnapshot(user.github_profile_url, {
+    etag: user.github_readme_etag || "",
+    html: user.github_readme_html || "",
+  });
+  await env.DB.prepare("UPDATE users SET github_profile_url=?, github_username=?, github_default_branch=?, github_readme_etag=?, github_readme_html=?, github_avatar_url=?, github_name=?, github_bio=?, github_synced_at=?, github_sync_error='' WHERE id=?")
+    .bind(snapshot.profileUrl, snapshot.username, snapshot.defaultBranch, snapshot.etag, snapshot.html, snapshot.avatarUrl || null, snapshot.name, snapshot.bio, snapshot.syncedAt, user.id).run();
+  return {
+    ...user,
+    github_profile_url: snapshot.profileUrl,
+    github_username: snapshot.username,
+    github_default_branch: snapshot.defaultBranch,
+    github_readme_etag: snapshot.etag,
+    github_readme_html: snapshot.html,
+    github_avatar_url: snapshot.avatarUrl || null,
+    github_name: snapshot.name,
+    github_bio: snapshot.bio,
+    github_synced_at: snapshot.syncedAt,
+    github_sync_error: "",
+  };
+}
+
+async function refreshGithubIfStale(env: Env, user: any) {
+  if (!user.github_profile_url || !user.github_readme_enabled) return user;
+  const lastSync = Date.parse(user.github_synced_at || "");
+  if (Number.isFinite(lastSync) && Date.now() - lastSync < GITHUB_REFRESH_MS) return user;
+  try {
+    return await syncGithubProfile(env, user);
+  } catch (error) {
+    return saveGithubError(env, user, error);
+  }
 }
 
 export async function workspaceApi(request: Request, env: Env): Promise<Response | null> {
   const url = new URL(request.url);
   const path = url.pathname;
-  const handled = path === "/api/me" || path === "/api/profile" || path.startsWith("/api/profile/readme/") ||
+  const handled = path === "/api/me" || path === "/api/profile" || path === "/api/profile/github/sync" || path.startsWith("/api/profile/readme/") ||
     path === "/api/members" || path.startsWith("/api/members/") || path.startsWith("/api/projects") || path.startsWith("/api/teams") ||
     path.startsWith("/api/team-invitations/") || path.startsWith("/api/notifications") ||
     path.startsWith("/api/admin/overview") || path.startsWith("/api/admin/forms") ||
@@ -61,17 +118,39 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
       links: parsed(user.links_json, []),
       privacy: parsed(user.privacy_json, {}),
       profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : null,
+      github: publicGithub(user),
     } : null });
   }
 
   if (path === "/api/profile" && request.method === "PUT") {
     if (!user) return json({ error: "Please sign in." }, { status: 401 });
     if (!body.englishName?.trim() || !body.chineseName?.trim() || !body.wechatId?.trim() || !body.classGrade?.trim()) return json({ error: "Please complete your profile." }, { status: 400 });
+    const requestedGithubUrl = body.githubProfileUrl === undefined ? String(user.github_profile_url || "") : String(body.githubProfileUrl || "").trim();
+    const githubRef = requestedGithubUrl ? parseGithubProfileUrl(requestedGithubUrl) : null;
+    if (requestedGithubUrl && !githubRef) return json({ error: "Use a public GitHub profile URL such as https://github.com/UnoxyRich." }, { status: 400 });
+    const githubReadmeEnabled = body.githubReadmeEnabled === undefined
+      ? Number(user.github_readme_enabled || 0)
+      : [true, "true", 1, "1"].includes(body.githubReadmeEnabled) ? 1 : 0;
+    if (githubReadmeEnabled && !githubRef) return json({ error: "Add a GitHub profile URL before using its profile README." }, { status: 400 });
+    const canonicalGithubUrl = githubRef?.profileUrl || "";
+    const githubChanged = canonicalGithubUrl !== String(user.github_profile_url || "");
     const skills = Array.isArray(body.skills) ? body.skills.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 30) : parsed(user.skills_json, []);
     const links = Array.isArray(body.links) ? body.links.filter((item: any) => item && typeof item.label === "string" && isUrl(item.url)).slice(0, 10) : parsed(user.links_json, []);
-    await env.DB.prepare("UPDATE users SET english_name=?, chinese_name=?, wechat_id=?, class_grade=?, bio=?, skills_json=?, links_json=?, readme_draft=?, privacy_json=?, updated_at=? WHERE id=?")
-      .bind(body.englishName.trim(), body.chineseName.trim(), body.wechatId.trim(), body.classGrade.trim(), String(body.bio || "").trim().slice(0, 500), JSON.stringify(skills), JSON.stringify(links), String(body.readmeDraft ?? user.readme_draft).slice(0, 20000), JSON.stringify(body.privacy && typeof body.privacy === "object" ? body.privacy : parsed(user.privacy_json, {})), now(), user.id).run();
+    await env.DB.prepare("UPDATE users SET english_name=?, chinese_name=?, wechat_id=?, class_grade=?, bio=?, skills_json=?, links_json=?, readme_draft=?, privacy_json=?, github_profile_url=?, github_readme_enabled=?, github_username=?, github_default_branch=?, github_readme_etag=?, github_readme_html=?, github_avatar_url=?, github_name=?, github_bio=?, github_synced_at=?, github_sync_error=?, updated_at=? WHERE id=?")
+      .bind(body.englishName.trim(), body.chineseName.trim(), body.wechatId.trim(), body.classGrade.trim(), String(body.bio || "").trim().slice(0, 500), JSON.stringify(skills), JSON.stringify(links), String(body.readmeDraft ?? user.readme_draft).slice(0, 20000), JSON.stringify(body.privacy && typeof body.privacy === "object" ? body.privacy : parsed(user.privacy_json, {})), canonicalGithubUrl || null, githubReadmeEnabled, githubChanged ? null : user.github_username || null, githubChanged ? null : user.github_default_branch || null, githubChanged ? "" : user.github_readme_etag || "", githubChanged ? "" : user.github_readme_html || "", githubChanged ? null : user.github_avatar_url || null, githubChanged ? "" : user.github_name || "", githubChanged ? "" : user.github_bio || "", githubChanged ? null : user.github_synced_at || null, githubChanged ? "" : user.github_sync_error || "", now(), user.id).run();
     return json({ ok: true });
+  }
+
+  if (path === "/api/profile/github/sync" && request.method === "POST") {
+    if (!user) return json({ error: "Please sign in." }, { status: 401 });
+    if (!user.github_profile_url || !user.github_readme_enabled) return json({ error: "Save a GitHub profile URL and enable the README mirror first." }, { status: 400 });
+    try {
+      const synced = await syncGithubProfile(env, user);
+      return json({ ok: true, github: publicGithub(synced, true) });
+    } catch (error) {
+      await saveGithubError(env, user, error);
+      return json({ error: String(error instanceof Error ? error.message : "GitHub sync failed.") }, { status: 502 });
+    }
   }
 
   if (path === "/api/profile/readme/publish" && request.method === "POST") {
@@ -93,8 +172,9 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
     const slug = decodeURIComponent(path.slice(13));
     const member = await env.DB.prepare("SELECT * FROM users WHERE (public_slug=? OR display_name=? COLLATE NOCASE) AND status='active'").bind(slug, slug).first<any>();
     if (!member) return json({ error: "Member not found." }, { status: 404 });
+    const freshMember = await refreshGithubIfStale(env, member);
     const projects = await env.DB.prepare("SELECT id,slug,title,summary,status,published_at FROM projects WHERE owner_user_id=? AND status='published' AND visibility='public' ORDER BY published_at DESC LIMIT 30").bind(member.id).all<any>();
-    return json({ member: publicUser(member), projects: projects.results });
+    return json({ member: publicUser(freshMember, true), projects: projects.results });
   }
 
   if (path === "/api/projects" && request.method === "GET") {

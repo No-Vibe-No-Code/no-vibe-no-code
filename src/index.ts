@@ -80,7 +80,7 @@ function cookie(name: string, value: string, maxAge: number, httpOnly = true) {
 
 function withSecurityHeaders(response: Response, request: Request) {
   const headers = new Headers(response.headers);
-  headers.set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+  headers.set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
   headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
