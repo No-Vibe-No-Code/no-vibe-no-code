@@ -1,7 +1,8 @@
 const { requestJson, jsonOptions, escapeHtml, markdown } = window.NVNC;
 const Motion = window.NVNCMotion;
 const params = new URLSearchParams(location.search);
-const requestedSlug = params.get("slug");
+const routeName = location.pathname.startsWith("/user/") ? decodeURIComponent(location.pathname.slice(6)) : "";
+const requestedSlug = params.get("slug") || routeName;
 let ownUser;
 let member;
 let projects = [];

@@ -45,7 +45,7 @@ const openTeam = async (teamId) => {
   const result = await requestJson(`/api/teams/${encodeURIComponent(teamId)}`);
   activeTeamId = result.team.id;
   document.getElementById("teamDetailName").textContent = result.team.name;
-  document.getElementById("teamMembers").innerHTML = result.members.map((member) => `<a class="row" href="/profile.html?slug=${encodeURIComponent(member.public_slug)}"><div class="row-copy"><strong>${escapeHtml(member.display_name)}</strong><span>${escapeHtml(member.role)}</span></div></a>`).join("");
+  document.getElementById("teamMembers").innerHTML = result.members.map((member) => `<a class="row" href="/user/${encodeURIComponent(member.public_slug)}"><div class="row-copy"><strong>${escapeHtml(member.display_name)}</strong><span>${escapeHtml(member.role)}</span></div></a>`).join("");
   const canInvite = ["owner","admin"].includes(result.viewerRole);
   if (canInvite) Motion.show(document.getElementById("inviteForm"));
   else Motion.hide(document.getElementById("inviteForm"));

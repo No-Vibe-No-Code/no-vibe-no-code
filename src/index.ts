@@ -19,6 +19,43 @@ export const json = (data: unknown, init: ResponseInit = {}) =>
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const slugify = (value: unknown) => String(value || "").toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function readCookie(request: Request, name: string) {
+  return request.headers.get("Cookie")?.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || "";
+}
+
+export function csrfValid(request: Request) {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
+  const cookieToken = readCookie(request, "nvnc_csrf");
+  const headerToken = request.headers.get("x-csrf-token") || "";
+  return Boolean(cookieToken && headerToken && cookieToken === headerToken);
+}
+
+function requestAddress(request: Request) {
+  return request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() || "unknown";
+}
+
+function withinRateLimit(request: Request, action: string, limit: number, windowMs: number) {
+  const key = `${action}:${requestAddress(request)}`;
+  const timestamp = Date.now();
+  const previous = rateBuckets.get(key);
+  if (!previous || previous.resetAt <= timestamp) {
+    rateBuckets.set(key, { count: 1, resetAt: timestamp + windowMs });
+    return true;
+  }
+  if (previous.count >= limit) return false;
+  previous.count += 1;
+  return true;
+}
+
+async function requestBody(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+    return Object.fromEntries(await request.formData());
+  }
+  return await request.json<any>();
+}
 
 async function hashPassword(password: string, salt = crypto.randomUUID()) {
   const bytes = new TextEncoder().encode(password);
@@ -33,11 +70,24 @@ async function hashPassword(password: string, salt = crypto.randomUUID()) {
 
 async function verifyPassword(password: string, stored: string) {
   const [salt, expected] = stored.split(".");
+  if (!salt || !expected) return false;
   return (await hashPassword(password, salt)).split(".")[1] === expected;
 }
 
-function cookie(name: string, value: string, maxAge: number) {
-  return `${name}=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+function cookie(name: string, value: string, maxAge: number, httpOnly = true) {
+  return `${name}=${value};${httpOnly ? " HttpOnly;" : ""} Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+}
+
+function withSecurityHeaders(response: Response, request: Request) {
+  const headers = new Headers(response.headers);
+  headers.set("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+  headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-frame-options", "DENY");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  if (!readCookie(request, "nvnc_csrf")) headers.append("set-cookie", cookie("nvnc_csrf", crypto.randomUUID(), 86400, false));
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function currentUser(request: Request, env: Env) {
@@ -50,7 +100,7 @@ async function currentUser(request: Request, env: Env) {
 
 function validProfile(body: any) {
   return ["displayName", "englishName", "chineseName", "wechatId", "classGrade", "password"].every(
-    (field) => typeof body[field] === "string" && body[field].trim(),
+    (field) => typeof body[field] === "string" && body[field].trim() && body[field].length <= (field === "password" ? 256 : 160),
   );
 }
 
@@ -77,12 +127,15 @@ async function ensureInitialLeader(env: Env, body: any) {
 async function legacyApi(request: Request, env: Env) {
   const url = new URL(request.url);
   if (!sameOrigin(request)) return json({ error: "Cross-site request rejected." }, { status: 403 });
-  const body = request.method === "POST" || request.method === "PUT" ? await request.json<any>() : {};
+  if (!csrfValid(request)) return json({ error: "Security check failed. Refresh the page and try again." }, { status: 403 });
+  let body: any = {};
+  try { body = ["POST", "PUT"].includes(request.method) ? await requestBody(request) : {}; } catch { return json({ error: "Invalid request body." }, { status: 400 }); }
 
   if (url.pathname === "/api/auth/signup" && request.method === "POST") {
+    if (!withinRateLimit(request, "signup", 5, 3600000)) return json({ error: "Too many signup attempts. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
     if (!validProfile(body) || body.memberChoice === undefined || body.termsAccepted !== true)
       return json({ error: "Please complete every field and accept the terms." }, { status: 400 });
-    if (body.password.length < 8) return json({ error: "Password must be at least 8 characters." }, { status: 400 });
+    if (body.password.length < 8 || body.password.length > 256) return json({ error: "Password must be 8–256 characters." }, { status: 400 });
     const timestamp = now();
     const userId = id();
     try {
@@ -97,6 +150,7 @@ async function legacyApi(request: Request, env: Env) {
   }
 
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
+    if (!withinRateLimit(request, "login", 8, 900000)) return json({ error: "Too many login attempts. Please try again in 15 minutes." }, { status: 429, headers: { "retry-after": "900" } });
     await ensureInitialLeader(env, body);
     const user = await env.DB.prepare("SELECT * FROM users WHERE display_name = ? COLLATE NOCASE AND status = 'active'").bind(body.displayName?.trim()).first<any>();
     if (!user || !(await verifyPassword(body.password || "", user.password_hash)))
@@ -113,7 +167,9 @@ async function legacyApi(request: Request, env: Env) {
   }
 
   if (url.pathname === "/api/contact" && request.method === "POST") {
+    if (!withinRateLimit(request, "contact", 8, 3600000)) return json({ error: "Too many messages from this device. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
     if (!body.name?.trim() || !body.wechatId?.trim() || !body.message?.trim()) return json({ error: "Please complete the contact form." }, { status: 400 });
+    if (String(body.name).length > 120 || String(body.wechatId).length > 120 || String(body.message).length > 1000) return json({ error: "Please keep the message concise." }, { status: 400 });
     await env.DB.prepare("INSERT INTO contacts (id, name, wechat_id, message, created_at) VALUES (?, ?, ?, ?, ?)").bind(id(), body.name.trim(), body.wechatId.trim(), body.message.trim(), now()).run();
     return json({ ok: true });
   }
@@ -209,15 +265,24 @@ async function legacyApi(request: Request, env: Env) {
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/")) {
-      try {
+    try {
+      if (url.pathname.startsWith("/api/")) {
         const workspaceResponse = await workspaceApi(request, env);
-        return workspaceResponse || await legacyApi(request, env);
-      } catch (error) {
-        console.error(error);
-        return json({ error: "Something went wrong. Please try again." }, { status: 500 });
+        return withSecurityHeaders(workspaceResponse || await legacyApi(request, env), request);
       }
+      if (url.pathname === "/user" || url.pathname === "/user/") {
+        return withSecurityHeaders(Response.redirect(new URL("/members.html", request.url), 302), request);
+      }
+      if (url.pathname.startsWith("/user/")) {
+        const profileUrl = new URL("/profile", request.url);
+        profileUrl.search = url.search;
+        return withSecurityHeaders(await env.ASSETS.fetch(new Request(profileUrl, request)), request);
+      }
+      const assetRequest = new Request(url, { method: request.method, headers: request.headers });
+      return withSecurityHeaders(await env.ASSETS.fetch(assetRequest), request);
+    } catch (error) {
+      console.error(error);
+      return withSecurityHeaders(json({ error: "Something went wrong. Please try again." }, { status: 500 }), request);
     }
-    return env.ASSETS.fetch(request);
   },
 };

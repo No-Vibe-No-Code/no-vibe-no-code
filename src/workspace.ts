@@ -1,5 +1,5 @@
 import type { Env } from "./index";
-import { json } from "./index";
+import { csrfValid, json } from "./index";
 
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -43,13 +43,14 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   const url = new URL(request.url);
   const path = url.pathname;
   const handled = path === "/api/me" || path === "/api/profile" || path.startsWith("/api/profile/readme/") ||
-    path.startsWith("/api/members/") || path.startsWith("/api/projects") || path.startsWith("/api/teams") ||
+    path === "/api/members" || path.startsWith("/api/members/") || path.startsWith("/api/projects") || path.startsWith("/api/teams") ||
     path.startsWith("/api/team-invitations/") || path.startsWith("/api/notifications") ||
     path.startsWith("/api/admin/overview") || path.startsWith("/api/admin/forms") ||
     path.startsWith("/api/forms/") || path.startsWith("/api/admin/broadcasts") ||
     path.startsWith("/api/admin/projects/");
   if (!handled) return null;
   if (!sameOrigin(request)) return json({ error: "Cross-site request rejected." }, { status: 403 });
+  if (!csrfValid(request)) return json({ error: "Security check failed. Refresh the page and try again." }, { status: 403 });
   const user = await userFor(request, env);
   const body = ["POST", "PUT"].includes(request.method) ? await request.clone().json<any>() : {};
 
@@ -79,9 +80,18 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
     return json({ ok: true });
   }
 
+  if (path === "/api/members" && request.method === "GET") {
+    const search = String(url.searchParams.get("q") || "").trim().slice(0, 80);
+    const limit = limitOf(url);
+    const result = search
+      ? await env.DB.prepare("SELECT * FROM users WHERE status='active' AND (display_name LIKE ? COLLATE NOCASE OR bio LIKE ?) ORDER BY created_at ASC LIMIT ?").bind(`%${search}%`, `%${search}%`, limit).all<any>()
+      : await env.DB.prepare("SELECT * FROM users WHERE status='active' ORDER BY created_at ASC LIMIT ?").bind(limit).all<any>();
+    return json({ members: result.results.map(publicUser) });
+  }
+
   if (path.startsWith("/api/members/") && request.method === "GET") {
     const slug = decodeURIComponent(path.slice(13));
-    const member = await env.DB.prepare("SELECT * FROM users WHERE public_slug=? AND status='active'").bind(slug).first<any>();
+    const member = await env.DB.prepare("SELECT * FROM users WHERE (public_slug=? OR display_name=? COLLATE NOCASE) AND status='active'").bind(slug, slug).first<any>();
     if (!member) return json({ error: "Member not found." }, { status: 404 });
     const projects = await env.DB.prepare("SELECT id,slug,title,summary,status,published_at FROM projects WHERE owner_user_id=? AND status='published' AND visibility='public' ORDER BY published_at DESC LIMIT 30").bind(member.id).all<any>();
     return json({ member: publicUser(member), projects: projects.results });

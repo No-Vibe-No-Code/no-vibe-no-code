@@ -1,13 +1,18 @@
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[character]);
+document.querySelectorAll('img[src="/logo-symbol.webp"],link[href="/logo-symbol-icon.png"]').forEach((element) => {
+  const attribute = element.tagName === "LINK" ? "href" : "src";
+  element.setAttribute(attribute, `${element.getAttribute(attribute)}?v=20260913-sky`);
+});
 const requestJson = async (url, options = {}) => {
   const response = await fetch(url, options);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || "Request failed.");
   return result;
 };
+const csrfToken = () => { const existing = document.cookie.match(/(?:^|;\s*)nvnc_csrf=([^;]+)/)?.[1]; if (existing) return existing; const token = crypto.randomUUID(); document.cookie = `nvnc_csrf=${token}; SameSite=Lax; Path=/; Max-Age=86400${location.protocol === "https:" ? "; Secure" : ""}`; return token; };
 const jsonOptions = (method, data) => ({
   method,
-  headers: { "content-type":"application/json" },
+  headers: { "content-type":"application/json", "x-csrf-token":csrfToken() },
   body: JSON.stringify(data),
 });
 const markdown = (source) => {

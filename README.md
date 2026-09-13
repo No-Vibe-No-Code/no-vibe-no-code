@@ -13,9 +13,9 @@ members, and gives club leaders a lightweight administration surface.
 ## Highlights
 
 - English and Simplified Chinese content with an instant language switcher
-- Cursor-reactive 3D club mark and prize-card interactions
-- Responsive club, activity, competition, and contact sections
-- Animated signup and membership-terms dialogs
+- Cursor-reactive 3D club mark and a recruitment-first join flow
+- Responsive club, activity, competition, member-directory, and contact sections
+- Lightweight interest registration with optional account creation
 - Member and non-member registration with timed terms acceptance
 - Secure account sessions and editable member profiles
 - PNG, JPEG, and WebP profile-image uploads
@@ -127,12 +127,6 @@ The included Wrangler configuration targets the custom domain
 | `npm run dev` | Start the local Wrangler development server |
 | `npm run check` | Build a deployment bundle without publishing |
 | `npm run deploy` | Deploy the Worker and static assets |
-
-## Brand notice
-
-The Starbucks name and logo belong to Starbucks Corporation. They are displayed
-only in the competition prize mockup and do not imply sponsorship or
-endorsement.
 
 ## License
 

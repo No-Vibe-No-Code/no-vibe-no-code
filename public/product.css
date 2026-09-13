@@ -16,3 +16,40 @@ dialog[open]::backdrop{animation:product-backdrop-in var(--motion-fast) ease-out
 .row,.primary-button,.secondary-button,.text-button,.danger-button{transition:background-color var(--motion-fast) ease,border-color var(--motion-fast) ease,color var(--motion-fast) ease,transform var(--motion-fast) var(--motion-ease)}
 @media(max-width:700px){::view-transition-new(root){box-shadow:-16px 0 0 6px var(--pink)}@keyframes product-page-in{from{opacity:.9;transform:translate3d(28px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}@view-transition{navigation:none}::view-transition-group(root),::view-transition-old(root),::view-transition-new(root),dialog[open]::backdrop{animation:none!important}.row,.primary-button,.secondary-button,.text-button,.danger-button,.tabs [aria-selected="true"],.tabs [aria-current="page"]{transition:none!important}}
+
+/* Keep every member-facing surface on the Nachoneko light-blue system. */
+:root{
+  --ink:#203a54;
+  --muted:#5b7187;
+  --accent:#216b9b;
+  --sky:#8ecdf2;
+  --mist:#d5ebfa;
+  --line:#d5e3ee;
+  --paper:#fff;
+  --soft:#f1f8fd;
+  --pink:var(--accent);
+  --hot:var(--sky);
+  --blush:var(--mist);
+}
+.primary-button{border-color:var(--sky);background:var(--sky);color:var(--ink)}
+.secondary-button{border-color:var(--accent);color:var(--accent)}
+.member-directory-promo{border-color:var(--accent)}
+.member-card:hover{border-color:var(--accent)}
+.member-card-top img,.member-avatar-fallback{border-color:var(--mist)}
+
+.member-directory-promo{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:18px 0;padding:22px;border:1px solid var(--pink);background:#fff}
+.member-directory-promo h3{margin:6px 0 4px;font-size:22px}
+.member-directory-promo p{margin:0;color:var(--muted);line-height:1.5}
+.member-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.member-card{min-width:0;padding:18px;border:1px solid var(--line);background:#fff;transition:transform var(--motion-base) var(--motion-ease),border-color var(--motion-fast) ease}
+.member-card:hover{transform:translateY(-4px);border-color:var(--pink)}
+.member-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.member-card-top img,.member-avatar-fallback{width:62px;height:62px;object-fit:cover;border-radius:50%;background:var(--soft);border:1px solid var(--blush)}
+.member-avatar-fallback{display:grid;place-items:center;color:var(--pink);font:22px "DM Mono",monospace}
+.member-card h3{margin:24px 0 8px;font-size:21px}
+.member-card p{min-height:44px;margin:0;color:var(--muted);line-height:1.5;font-size:13px}
+.member-card-link{display:block;margin-top:24px;color:var(--pink);font:11px "DM Mono",monospace;text-transform:uppercase}
+.search-field{display:block;width:100%;margin:0;color:var(--muted);font-size:11px}
+.search-field input{display:block;margin-top:8px}
+@media(max-width:980px){.member-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.member-directory-promo{display:block}.member-directory-promo .primary-button{display:flex;margin-top:18px}.member-grid{grid-template-columns:1fr}.member-card p{min-height:0}}

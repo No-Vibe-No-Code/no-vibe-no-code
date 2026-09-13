@@ -5,7 +5,7 @@ let nextCursor;
 const render = () => {
   const query = document.getElementById("projectSearch").value.toLowerCase();
   const projects = allProjects.filter((project) => `${project.title} ${project.summary} ${project.owner_name}`.toLowerCase().includes(query));
-  document.getElementById("gallery").innerHTML = projects.length ? projects.map((project) => `<article class="project-card"><div class="project-card-body"><span class="badge success">Published</span><h3><a href="/project.html?project=${encodeURIComponent(project.slug)}">${escapeHtml(project.title)}</a></h3><p>${escapeHtml(project.summary || "No summary yet.")}</p><a href="/profile.html?slug=${encodeURIComponent(project.owner_slug)}">By ${escapeHtml(project.owner_name)}</a></div></article>`).join("") : '<div class="empty-state"><h3>No matching projects</h3><p>Try a different search.</p></div>';
+  document.getElementById("gallery").innerHTML = projects.length ? projects.map((project) => `<article class="project-card"><div class="project-card-body"><span class="badge success">Published</span><h3><a href="/project.html?project=${encodeURIComponent(project.slug)}">${escapeHtml(project.title)}</a></h3><p>${escapeHtml(project.summary || "No summary yet.")}</p><a href="/user/${encodeURIComponent(project.owner_slug)}">By ${escapeHtml(project.owner_name)}</a></div></article>`).join("") : '<div class="empty-state"><h3>No matching projects</h3><p>Try a different search.</p></div>';
   Motion.reveal(document.querySelectorAll("#gallery .project-card"));
 };
 const load = async (append = false) => {
