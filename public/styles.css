@@ -171,16 +171,6 @@ main{overflow-x:clip}
 .join-highlight p,.join-mini strong{color:var(--muted);font-size:13px;line-height:1.55}
 .join-mini{margin-top:70px;border-top:1px solid var(--line);padding-top:18px;display:grid;gap:14px}
 .join-mini strong{color:var(--ink);font:14px/1.8 "DM Mono",monospace}
-.make-section{max-width:1180px;margin:auto;padding:100px 5vw;display:grid;grid-template-columns:.7fr 1.3fr;gap:70px;border-bottom:1px solid var(--line)}
-.make-section h2{font-size:clamp(42px,5vw,66px);margin-top:20px}
-.make-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;border-top:1px solid var(--line)}
-.make-list>div{display:flex;align-items:baseline;gap:18px;padding:21px 0;border-bottom:1px solid var(--line)}
-.make-list b{font:11px "DM Mono",monospace;color:var(--pink)}
-.make-list strong{font-size:18px;font-weight:500}
-.make-intro{min-width:0}
-.make-mascot{position:relative;max-width:430px;margin:34px 0 0;isolation:isolate}
-.make-mascot img{display:block;width:100%;height:auto;filter:drop-shadow(0 18px 26px #203a5424)}
-.make-mascot figcaption{margin-top:-4px;color:var(--muted);font:10px "DM Mono",monospace;letter-spacing:.08em;text-transform:uppercase}
 .rhythm-note{max-width:32ch;color:var(--muted);font-size:15px;line-height:1.55}
 .competition-note{border-left:2px solid var(--hot);padding-left:15px;margin-top:30px;color:#fff!important}
 .prize-note{border:1px solid #ffffff55;padding:28px;background:#ffffff0c;display:grid;gap:14px;min-height:230px;align-content:center}
@@ -202,10 +192,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .join-actions button{width:100%}
   .join-side{padding-top:55px}
   .join-mini{margin-top:45px}
-  .make-section{display:block;padding-top:78px;padding-bottom:78px}
-  .make-mascot{max-width:360px;margin:36px auto 0}
-  .make-list{margin-top:42px}
-  .make-list strong{font-size:16px}
   .prize-note{min-height:0}
   .mobile-join-cta{position:fixed;display:flex;z-index:6;left:14px;right:14px;bottom:max(14px,env(safe-area-inset-bottom));min-height:50px;align-items:center;justify-content:space-between;padding:0 18px;border:1px solid var(--pink);background:var(--pink);color:#fff;font:12px "DM Mono",monospace;letter-spacing:.05em;text-transform:uppercase;box-shadow:0 12px 24px #1d2e6130}
   .mobile-join-cta span{font-size:18px}
