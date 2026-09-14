@@ -21,4 +21,9 @@ const load = async () => {
   Motion.reveal(document.querySelectorAll("#dynamicForm > .field"));
 };
 document.getElementById("dynamicForm").onsubmit=async(event)=>{event.preventDefault();const data=new FormData(event.target);const answers={};for(const [key,value] of data){if(answers[key]!==undefined)answers[key]=Array.isArray(answers[key])?[...answers[key],value]:[answers[key],value];else answers[key]=value;}try{await requestJson(`/api/forms/${encodeURIComponent(form.id)}/responses`,jsonOptions("POST",{answers}));event.target.innerHTML='<div class="empty-state"><h3>Response submitted</h3><p>Your response has been saved.</p><a class="primary-button" href="/home.html">Member home</a></div>';Motion.revealWithin(event.target);}catch(error){document.getElementById("responseMessage").textContent=error.message;}};
-load().catch((error)=>{document.getElementById("dynamicForm").innerHTML=`<div class="notice error">${escapeHtml(error.message)}</div>`;});
+load().catch((error)=>{
+  const missing = error.message === "No form selected.";
+  document.getElementById("formHeading").textContent = missing ? "Choose a form." : "Form unavailable.";
+  document.getElementById("formDescription").textContent = missing ? "Open a form link from the club when you are ready to respond." : "This form could not be loaded right now.";
+  document.getElementById("dynamicForm").innerHTML = `<div class="empty-state"><h3>${escapeHtml(error.message)}</h3><p>${missing ? "Forms are shared through the club site or a direct invite." : "Try again later, or return to the club site."}</p><a class="secondary-button" href="/">Club site</a></div>`;
+});
