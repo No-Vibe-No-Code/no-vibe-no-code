@@ -1,5 +1,5 @@
 import type { Env } from "./index";
-import { csrfValid, json } from "./index";
+import { cookie, csrfValid, json, readCookie, withinRateLimit } from "./index";
 import { fetchGithubSnapshot, parseGithubProfileUrl } from "./github";
 
 const now = () => new Date().toISOString();
@@ -14,10 +14,42 @@ const isUrl = (value: unknown) => !value || (typeof value === "string" && value.
 const limitOf = (url: URL) => Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 20));
 const GITHUB_REFRESH_MS = 10 * 60 * 1000;
 const enabled = (value: unknown) => [true, "true", 1, "1"].includes(value as never);
+const voteVariants = [
+  { slug: "skyline-ribbon", name: "Skyline Ribbon", description: "A crisp diagonal sweep with a bright, welcoming club signal.", palette: "Powder blue · sky blue · royal blue" },
+  { slug: "blueberry-window", name: "Blueberry Window", description: "A soft cloud window that lets the mascot peek into your next idea.", palette: "Icy blue · cobalt · white" },
+  { slug: "blueprint-paws", name: "Blueprint Paws", description: "A technical sketchbook look for people who like to see how things work.", palette: "Blueprint blue · white · soft blue" },
+  { slug: "cloud-cat", name: "Cloud Cat", description: "An airy, gentle card that feels like a tiny piece of the club sky.", palette: "Baby blue · sky blue · deep blue" },
+  { slug: "after-school-club", name: "After-School Club", description: "Notebook doodles, laptop energy, and a little more personality.", palette: "White · light blue · royal blue" },
+] as const;
+const voteVariantSlugs = new Set<string>(voteVariants.map((variant) => variant.slug));
 
 async function hashNfcToken(token: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashVoteValue(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function voteIdentity(request: Request, browserSignal = "") {
+  let deviceCookie = readCookie(request, "nvnc_vote_device");
+  const issued = !/^[A-Za-z0-9-]{20,100}$/.test(deviceCookie);
+  if (issued) deviceCookie = crypto.randomUUID();
+  const browserHeaders = [
+    request.headers.get("user-agent"),
+    request.headers.get("accept-language"),
+    request.headers.get("sec-ch-ua"),
+    request.headers.get("sec-ch-ua-platform"),
+    request.headers.get("sec-ch-ua-mobile"),
+  ].map((value) => String(value || "").slice(0, 240)).join("\u001f");
+  const signal = String(browserSignal || "").trim().slice(0, 1200);
+  return {
+    cookieHash: await hashVoteValue(deviceCookie),
+    fingerprintHash: await hashVoteValue(`${browserHeaders}\u001e${signal}`),
+    setCookie: issued ? cookie("nvnc_vote_device", deviceCookie, 31536000) : "",
+  };
 }
 
 function createNfcToken() {
@@ -128,6 +160,7 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   const handled = path === "/api/me" || path === "/api/profile" || path === "/api/profile/github/sync" || path.startsWith("/api/profile/readme/") ||
     path === "/api/members" || path.startsWith("/api/members/") || path.startsWith("/api/projects") || path.startsWith("/api/teams") ||
     path.startsWith("/api/team-invitations/") || path.startsWith("/api/notifications") ||
+    path === "/api/vote" || path === "/api/vote/results" ||
     path.startsWith("/api/nfc/") || path === "/api/admin/nfc-cards" ||
     path.startsWith("/api/admin/overview") || path.startsWith("/api/admin/forms") ||
     path.startsWith("/api/forms/") || path.startsWith("/api/admin/broadcasts") ||
@@ -137,6 +170,34 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   if (!csrfValid(request)) return json({ error: "Security check failed. Refresh the page and try again." }, { status: 403 });
   const user = await userFor(request, env);
   const body = ["POST", "PUT"].includes(request.method) ? await request.clone().json<any>() : {};
+
+  if (path === "/api/vote/results" && request.method === "GET") {
+    const identity = await voteIdentity(request, request.headers.get("x-device-fingerprint") || "");
+    const [counts, existing] = await Promise.all([
+      env.DB.prepare("SELECT variant_slug, COUNT(*) AS count FROM design_votes GROUP BY variant_slug").all<any>(),
+      env.DB.prepare("SELECT variant_slug FROM design_votes WHERE voter_cookie_hash=? OR device_fingerprint_hash=? LIMIT 1").bind(identity.cookieHash, identity.fingerprintHash).first<any>(),
+    ]);
+    const countMap = new Map(counts.results.map((row: any) => [row.variant_slug, Number(row.count) || 0]));
+    const variants = voteVariants.map((variant) => ({ ...variant, votes: countMap.get(variant.slug) || 0 }));
+    return json({ variants, total: variants.reduce((sum, variant) => sum + variant.votes, 0), hasVoted: Boolean(existing), votedVariant: existing?.variant_slug || null }, {
+      headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {},
+    });
+  }
+
+  if (path === "/api/vote" && request.method === "POST") {
+    if (!withinRateLimit(request, "design-vote", 8, 3600000)) return json({ error: "Too many voting attempts. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
+    const variant = String(body.variant || "").trim();
+    if (!voteVariantSlugs.has(variant)) return json({ error: "Choose one of the five card concepts." }, { status: 400 });
+    const identity = await voteIdentity(request, typeof body.deviceFingerprint === "string" ? body.deviceFingerprint : request.headers.get("x-device-fingerprint") || "");
+    try {
+      await env.DB.prepare("INSERT INTO design_votes (id,variant_slug,voter_cookie_hash,device_fingerprint_hash,created_at) VALUES (?,?,?,?,?)")
+        .bind(id(), variant, identity.cookieHash, identity.fingerprintHash, now()).run();
+    } catch (error) {
+      if (String(error).includes("UNIQUE")) return json({ error: "You have already voted from this browser or device." }, { status: 409 });
+      throw error;
+    }
+    return json({ ok: true, variant }, { status: 201, headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {} });
+  }
 
   if (path === "/api/me" && request.method === "GET") {
     return json({ user: user ? {

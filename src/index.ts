@@ -21,7 +21,7 @@ const id = () => crypto.randomUUID();
 const slugify = (value: unknown) => String(value || "").toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
-function readCookie(request: Request, name: string) {
+export function readCookie(request: Request, name: string) {
   return request.headers.get("Cookie")?.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`))?.[1] || "";
 }
 
@@ -36,7 +36,7 @@ function requestAddress(request: Request) {
   return request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() || "unknown";
 }
 
-function withinRateLimit(request: Request, action: string, limit: number, windowMs: number) {
+export function withinRateLimit(request: Request, action: string, limit: number, windowMs: number) {
   const key = `${action}:${requestAddress(request)}`;
   const timestamp = Date.now();
   const previous = rateBuckets.get(key);
@@ -74,7 +74,7 @@ async function verifyPassword(password: string, stored: string) {
   return (await hashPassword(password, salt)).split(".")[1] === expected;
 }
 
-function cookie(name: string, value: string, maxAge: number, httpOnly = true) {
+export function cookie(name: string, value: string, maxAge: number, httpOnly = true) {
   return `${name}=${value};${httpOnly ? " HttpOnly;" : ""} Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
 }
 
