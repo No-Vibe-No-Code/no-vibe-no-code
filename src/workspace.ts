@@ -15,6 +15,17 @@ const limitOf = (url: URL) => Math.min(100, Math.max(1, Number(url.searchParams.
 const GITHUB_REFRESH_MS = 10 * 60 * 1000;
 const enabled = (value: unknown) => [true, "true", 1, "1"].includes(value as never);
 
+async function hashNfcToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function createNfcToken() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function userFor(request: Request, env: Env) {
   const sessionId = request.headers.get("Cookie")?.match(/nvnc_session=([^;]+)/)?.[1];
   if (!sessionId) return null;
@@ -117,6 +128,7 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   const handled = path === "/api/me" || path === "/api/profile" || path === "/api/profile/github/sync" || path.startsWith("/api/profile/readme/") ||
     path === "/api/members" || path.startsWith("/api/members/") || path.startsWith("/api/projects") || path.startsWith("/api/teams") ||
     path.startsWith("/api/team-invitations/") || path.startsWith("/api/notifications") ||
+    path.startsWith("/api/nfc/") || path === "/api/admin/nfc-cards" ||
     path.startsWith("/api/admin/overview") || path.startsWith("/api/admin/forms") ||
     path.startsWith("/api/forms/") || path.startsWith("/api/admin/broadcasts") ||
     path.startsWith("/api/admin/projects/");
@@ -177,6 +189,58 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
     if (!user) return json({ error: "Please sign in." }, { status: 401 });
     await env.DB.prepare("UPDATE users SET readme_published=readme_draft, updated_at=? WHERE id=?").bind(now(), user.id).run();
     return json({ ok: true });
+  }
+
+  if (path === "/api/admin/nfc-cards" && request.method === "GET") {
+    if (!user || !staffRoles.includes(user.role)) return json({ error: "Not authorized." }, { status: 403 });
+    const cards = await env.DB.prepare("SELECT c.label,c.status,c.claimed_at,c.scan_count,c.last_scanned_at,u.display_name,u.public_slug FROM nfc_cards c LEFT JOIN users u ON u.id=c.claimed_by_user_id ORDER BY c.created_at ASC LIMIT 500").all<any>();
+    return json({ cards: cards.results.map((card: any) => ({ ...card, profileUrl: card.public_slug ? `/user/${encodeURIComponent(card.public_slug)}` : null })) });
+  }
+
+  if (path === "/api/admin/nfc-cards" && request.method === "POST") {
+    if (!user || !leaderRoles.includes(user.role)) return json({ error: "Only club leaders and teachers can create NFC cards." }, { status: 403 });
+    const count = Math.min(200, Math.max(1, Number(body.count) || 1));
+    const timestamp = now();
+    const cards: Array<{ label: string; url: string }> = [];
+    const statements: D1PreparedStatement[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const token = createNfcToken();
+      const label = `NFC-${timestamp.replace(/\D/g, "").slice(-10)}-${String(index + 1).padStart(3, "0")}`;
+      cards.push({ label, url: `${new URL(request.url).origin}/nfc/${token}` });
+      statements.push(env.DB.prepare("INSERT INTO nfc_cards (id,label,token_hash,created_at,updated_at) VALUES (?,?,?,?,?)").bind(id(), label, await hashNfcToken(token), timestamp, timestamp));
+    }
+    await env.DB.batch(statements);
+    return json({ ok: true, cards }, { status: 201 });
+  }
+
+  const nfcCard = path.match(/^\/api\/nfc\/cards\/([^/]+)$/);
+  if (nfcCard && request.method === "GET") {
+    const tokenHash = await hashNfcToken(decodeURIComponent(nfcCard[1]));
+    const card = await env.DB.prepare("SELECT c.*,u.display_name,u.public_slug FROM nfc_cards c LEFT JOIN users u ON u.id=c.claimed_by_user_id WHERE c.token_hash=?").bind(tokenHash).first<any>();
+    if (!card) return json({ error: "NFC card not found." }, { status: 404 });
+    const timestamp = now();
+    await env.DB.prepare("UPDATE nfc_cards SET scan_count=scan_count+1,last_scanned_at=?,updated_at=? WHERE id=?").bind(timestamp, timestamp, card.id).run();
+    if (card.status === "disabled") return json({ status: "disabled", label: card.label });
+    if (!card.claimed_by_user_id || !card.public_slug) {
+      if (card.status !== "unclaimed") await env.DB.prepare("UPDATE nfc_cards SET status='unclaimed',claimed_at=NULL,updated_at=? WHERE id=? AND claimed_by_user_id IS NULL").bind(timestamp, card.id).run();
+      return json({ status: "available", label: card.label });
+    }
+    return json({ status: "claimed", profileUrl: `/user/${encodeURIComponent(card.public_slug)}` });
+  }
+
+  const nfcClaim = path.match(/^\/api\/nfc\/cards\/([^/]+)\/claim$/);
+  if (nfcClaim && request.method === "POST") {
+    if (!user) return json({ error: "Please sign in before binding this card." }, { status: 401 });
+    const tokenHash = await hashNfcToken(decodeURIComponent(nfcClaim[1]));
+    const card = await env.DB.prepare("SELECT * FROM nfc_cards WHERE token_hash=?").bind(tokenHash).first<any>();
+    if (!card) return json({ error: "NFC card not found." }, { status: 404 });
+    if (card.status === "disabled") return json({ error: "This card has been disabled." }, { status: 410 });
+    if (card.claimed_by_user_id === user.id) return json({ ok: true, profileUrl: `/user/${encodeURIComponent(user.public_slug)}` });
+    if (card.claimed_by_user_id) return json({ error: "This card is already bound to another profile." }, { status: 409 });
+    const timestamp = now();
+    const updated = await env.DB.prepare("UPDATE nfc_cards SET status='claimed',claimed_by_user_id=?,claimed_at=?,updated_at=? WHERE id=? AND status IN ('unclaimed','claimed') AND claimed_by_user_id IS NULL").bind(user.id, timestamp, timestamp, card.id).run();
+    if (!Number((updated as any).meta?.changes || 0)) return json({ error: "This card was just claimed by another profile." }, { status: 409 });
+    return json({ ok: true, profileUrl: `/user/${encodeURIComponent(user.public_slug)}` });
   }
 
   if (path === "/api/members" && request.method === "GET") {

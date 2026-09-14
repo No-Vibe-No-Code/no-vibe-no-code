@@ -286,6 +286,11 @@ export default {
         profileUrl.search = url.search;
         return withSecurityHeaders(await env.ASSETS.fetch(new Request(profileUrl, request)), request);
       }
+      if (url.pathname.startsWith("/nfc/") && url.pathname.length > 5) {
+        const nfcUrl = new URL("/nfc", request.url);
+        nfcUrl.searchParams.set("token", url.pathname.slice(5));
+        return withSecurityHeaders(await env.ASSETS.fetch(new Request(nfcUrl, request)), request);
+      }
       const assetRequest = new Request(url, { method: request.method, headers: request.headers });
       return withSecurityHeaders(await assetOrNotFound(assetRequest, env), request);
     } catch (error) {
