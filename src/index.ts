@@ -262,6 +262,14 @@ async function legacyApi(request: Request, env: Env) {
   return json({ error: "Not found." }, { status: 404 });
 }
 
+async function assetOrNotFound(request: Request, env: Env) {
+  const assetResponse = await env.ASSETS.fetch(request);
+  if (assetResponse.status !== 404 || !["GET", "HEAD"].includes(request.method) || new URL(request.url).pathname === "/404.html") return assetResponse;
+  const notFoundUrl = new URL("/404.html", request.url);
+  const notFoundResponse = await env.ASSETS.fetch(new Request(notFoundUrl, { method: request.method, headers: request.headers }));
+  return new Response(notFoundResponse.body, { status: 404, statusText: "Not Found", headers: notFoundResponse.headers });
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
@@ -279,7 +287,7 @@ export default {
         return withSecurityHeaders(await env.ASSETS.fetch(new Request(profileUrl, request)), request);
       }
       const assetRequest = new Request(url, { method: request.method, headers: request.headers });
-      return withSecurityHeaders(await env.ASSETS.fetch(assetRequest), request);
+      return withSecurityHeaders(await assetOrNotFound(assetRequest, env), request);
     } catch (error) {
       console.error(error);
       return withSecurityHeaders(json({ error: "Something went wrong. Please try again." }, { status: 500 }), request);

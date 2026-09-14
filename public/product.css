@@ -74,8 +74,22 @@ dialog[open]::backdrop{animation:product-backdrop-in var(--motion-fast) ease-out
 .profile-rail{display:grid;gap:22px;margin-top:26px}
 .profile-rail-section{border-top:1px solid var(--line);padding-top:14px}
 .profile-rail-section h3{margin:0 0 8px;color:var(--muted);font:10px "DM Mono",monospace;letter-spacing:.1em;text-transform:uppercase}
-.site-mascot-badge{position:fixed;right:22px;bottom:20px;width:118px;z-index:8;pointer-events:none;filter:drop-shadow(0 12px 20px #203a5430)}
+.site-mascot-badge{position:fixed;right:22px;bottom:20px;width:118px;z-index:2;pointer-events:none;filter:drop-shadow(0 12px 20px #203a5430)}
 .site-mascot-badge img{display:block;width:100%;height:auto;transform:rotate(3deg)}
+.site-mascot-badge--edge-left,.site-mascot-badge--edge-right{top:42%;bottom:auto;width:168px;z-index:2;filter:drop-shadow(0 14px 20px #203a5428)}
+.site-mascot-badge--edge-left::before,.site-mascot-badge--edge-right::before{content:"";position:absolute;top:-26px;bottom:-26px;width:18px;border:1px solid var(--mist);background:linear-gradient(180deg,#fff,var(--soft));box-shadow:0 8px 18px #203a5418;z-index:-1}
+.site-mascot-badge--edge-left::before{right:8px;border-radius:0 12px 12px 0}
+.site-mascot-badge--edge-right::before{left:8px;border-radius:12px 0 0 12px}
+.site-mascot-badge--edge-left{left:-62px;right:auto}
+.site-mascot-badge--edge-right{right:-62px}
+.site-mascot-badge--edge-left img{transform:rotate(-4deg)}
+.site-mascot-badge--edge-right img{transform:rotate(4deg)}
+.empty-state{display:grid;justify-items:center;gap:6px}
+.empty-mascot{width:108px;max-height:120px;object-fit:contain;margin:-12px auto 4px}
+.readme{min-width:0}
+.readme>p{margin:16px 0}
+.readme img{width:auto;max-width:100%;height:auto;object-fit:contain}
+.readme>p:has(>a>img),.readme>p:has(>img){margin:14px 0}
 .profile-links,.profile-teams,.profile-contacts{display:grid;gap:2px}
 .profile-link-row,.profile-team-row,.profile-contact-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;min-width:0;padding:8px 0;color:var(--ink);font-size:13px}
 .profile-link-row:hover,.profile-contact-row:hover{color:var(--accent)}
@@ -95,5 +109,17 @@ dialog[open]::backdrop{animation:product-backdrop-in var(--motion-fast) ease-out
 .link-editor-row{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(180px,1.5fr) auto;align-items:center;gap:8px}
 .link-editor-row input{min-width:0}
 .link-editor-row .remove-link{min-width:40px;padding:7px 10px}
+.not-found-page{min-height:100dvh;background:var(--soft)}
+.not-found-page .product-brand span{display:inline}
+.not-found-content{max-width:1180px}
+.not-found-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.85fr);align-items:center;gap:clamp(28px,7vw,96px);min-height:calc(100dvh - 68px)}
+.not-found-grid h1{max-width:13ch;margin:12px 0 18px;font-size:clamp(48px,7vw,92px);line-height:.9;letter-spacing:-.075em}
+.not-found-copy{max-width:46ch;margin:0;color:var(--muted);font-size:18px;line-height:1.6}
+.not-found-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:28px}
+.not-found-mascot{margin:0;text-align:center}
+.not-found-mascot img{display:block;width:min(100%,470px);height:auto;margin:0 auto;filter:drop-shadow(0 18px 30px #203a5420)}
+.not-found-mascot figcaption{margin-top:-12px;color:var(--muted);font:11px "DM Mono",monospace;letter-spacing:.08em;text-transform:uppercase}
 @media(max-width:700px){.link-editor-row{grid-template-columns:minmax(0,1fr) auto}.link-editor-row .link-url-input{grid-column:1/-1}.profile-rail{gap:18px}}
-@media(max-width:700px){.site-mascot-badge{right:14px;bottom:78px;width:84px}}
+@media(max-width:700px){.site-mascot-badge{right:14px;bottom:78px;width:84px}.site-mascot-badge--edge-left,.site-mascot-badge--edge-right{top:auto;bottom:78px;width:94px}.site-mascot-badge--edge-left{left:-36px;right:auto}.site-mascot-badge--edge-right{right:-36px}.empty-mascot{width:84px;max-height:96px}.not-found-grid{grid-template-columns:1fr;gap:12px;min-height:calc(100dvh - 60px);padding-top:26px}.not-found-grid h1{max-width:10ch;font-size:clamp(48px,15vw,72px)}.not-found-copy{font-size:16px}.not-found-mascot{order:2}.not-found-mascot img{width:min(100%,340px)}}
+@media(max-width:980px){.readme-layout{grid-template-columns:1fr}.profile-card{max-width:360px}.site-mascot-badge--edge-left,.site-mascot-badge--edge-right{top:auto;bottom:78px}}
+@media(max-width:980px){body:has(.profile-card) .site-mascot-badge--edge-left{display:none}}
