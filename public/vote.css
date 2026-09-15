@@ -15,3 +15,6 @@
 /* Render full-bleed generated artwork without masking or cropping its edges. */
 .card-face{border-radius:0;box-shadow:none}
 .card-face img{object-fit:fill;transform:none}
+@media(min-width:761px) and (max-width:900px) and (min-height:900px){.vote-content{grid-template-rows:auto auto auto;align-content:center}.rating-workspace{position:static;align-items:start}}
+@media(max-width:760px){.vote-heading{grid-template-columns:minmax(0,1fr) minmax(100px,.42fr)}}
+@media(max-width:760px) and (max-height:640px){.vote-content{padding-top:8px;padding-bottom:8px;gap:6px}.vote-heading{grid-template-columns:minmax(0,1fr) minmax(92px,.42fr);gap:6px}.vote-heading .eyebrow{grid-column:1/-1;white-space:nowrap;margin:0}.vote-heading h1{margin:0;font-size:26px;line-height:.9}.vote-progress{padding:8px}.rating-workspace{gap:6px}.card-index{display:none}.rating-panel{padding:8px 10px;gap:5px}.rating-panel h2{margin:2px 0 1px;font-size:22px}.rating-choice{min-height:40px}.rating-choice span{font-size:18px}.rating-choice--zero span{font-size:14px}.rating-choice small{font-size:7px}.rating-hint{min-height:12px;margin-top:2px;font-size:9px}.next-rating{min-height:32px;font-size:11px}#voteStatus{min-height:12px;margin:0;font-size:9px;line-height:1.2}}
