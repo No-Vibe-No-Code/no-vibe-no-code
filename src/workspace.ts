@@ -173,30 +173,43 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
 
   if (path === "/api/vote/results" && request.method === "GET") {
     const identity = await voteIdentity(request, request.headers.get("x-device-fingerprint") || "");
-    const [counts, existing] = await Promise.all([
-      env.DB.prepare("SELECT variant_slug, COUNT(*) AS count FROM design_votes GROUP BY variant_slug").all<any>(),
-      env.DB.prepare("SELECT variant_slug FROM design_votes WHERE voter_cookie_hash=? OR device_fingerprint_hash=? LIMIT 1").bind(identity.cookieHash, identity.fingerprintHash).first<any>(),
+    const [stats, mine, completedVoters] = await Promise.all([
+      env.DB.prepare("SELECT variant_slug, COUNT(*) AS count, AVG(rating) AS average FROM design_ratings GROUP BY variant_slug").all<any>(),
+      env.DB.prepare("SELECT variant_slug, rating FROM design_ratings WHERE voter_cookie_hash=? OR device_fingerprint_hash=? ORDER BY created_at ASC").bind(identity.cookieHash, identity.fingerprintHash).all<any>(),
+      env.DB.prepare("SELECT COUNT(*) AS count FROM (SELECT voter_cookie_hash FROM design_ratings GROUP BY voter_cookie_hash HAVING COUNT(DISTINCT variant_slug)=5)").first<any>(),
     ]);
-    const countMap = new Map(counts.results.map((row: any) => [row.variant_slug, Number(row.count) || 0]));
-    const variants = voteVariants.map((variant) => ({ ...variant, votes: countMap.get(variant.slug) || 0 }));
-    return json({ variants, total: variants.reduce((sum, variant) => sum + variant.votes, 0), hasVoted: Boolean(existing), votedVariant: existing?.variant_slug || null }, {
+    const statsMap = new Map(stats.results.map((row: any) => [row.variant_slug, row]));
+    const mineMap = new Map(mine.results.map((row: any) => [row.variant_slug, Number(row.rating)]));
+    const completed = voteVariants.every((variant) => mineMap.has(variant.slug));
+    const variants = voteVariants.map((variant) => {
+      const stat = statsMap.get(variant.slug);
+      return {
+        ...variant,
+        averageRating: completed && stat ? Number(Number(stat.average).toFixed(2)) : null,
+        ratingCount: completed && stat ? Number(stat.count) || 0 : null,
+      };
+    });
+    return json({ variants, completed, ratings: [...mineMap].map(([variant, rating]) => ({ variant, rating })), totalVoters: Number(completedVoters?.count) || 0 }, {
       headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {},
     });
   }
 
   if (path === "/api/vote" && request.method === "POST") {
-    if (!withinRateLimit(request, "design-vote", 8, 3600000)) return json({ error: "Too many voting attempts. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
+    if (!withinRateLimit(request, "design-rating", 30, 3600000)) return json({ error: "Too many rating attempts. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
     const variant = String(body.variant || "").trim();
     if (!voteVariantSlugs.has(variant)) return json({ error: "Choose one of the five card concepts." }, { status: 400 });
+    const rating = Number(body.rating);
+    if (!Number.isInteger(rating) || rating < 0 || rating > 5) return json({ error: "Choose a rating from 0 to 5 stars." }, { status: 400 });
     const identity = await voteIdentity(request, typeof body.deviceFingerprint === "string" ? body.deviceFingerprint : request.headers.get("x-device-fingerprint") || "");
     try {
-      await env.DB.prepare("INSERT INTO design_votes (id,variant_slug,voter_cookie_hash,device_fingerprint_hash,created_at) VALUES (?,?,?,?,?)")
-        .bind(id(), variant, identity.cookieHash, identity.fingerprintHash, now()).run();
+      await env.DB.prepare("INSERT INTO design_ratings (id,variant_slug,rating,voter_cookie_hash,device_fingerprint_hash,created_at) VALUES (?,?,?,?,?,?)")
+        .bind(id(), variant, rating, identity.cookieHash, identity.fingerprintHash, now()).run();
     } catch (error) {
-      if (String(error).includes("UNIQUE")) return json({ error: "You have already voted from this browser or device." }, { status: 409 });
+      if (String(error).includes("UNIQUE")) return json({ error: "You have already rated this card from this browser or device." }, { status: 409 });
       throw error;
     }
-    return json({ ok: true, variant }, { status: 201, headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {} });
+    const progress = await env.DB.prepare("SELECT COUNT(DISTINCT variant_slug) AS count FROM design_ratings WHERE voter_cookie_hash=? OR device_fingerprint_hash=?").bind(identity.cookieHash, identity.fingerprintHash).first<any>();
+    return json({ ok: true, variant, rating, completed: Number(progress?.count) === voteVariants.length }, { status: 201, headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {} });
   }
 
   if (path === "/api/me" && request.method === "GET") {
