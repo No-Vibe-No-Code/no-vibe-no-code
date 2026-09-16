@@ -71,7 +71,20 @@ const renderProfile = () => {
   document.getElementById("profileAvatar").src = avatarUrl || "/logo-symbol.webp";
   renderProfileRail();
   const sourceNote = githubReadme ? `<div class="github-readme-source"><span>IMPORTED FROM GITHUB</span><a href="${escapeHtml(github.profileUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(github.username || "GitHub")} ↗</a></div>` : "";
-  document.getElementById("readme").innerHTML = githubReadme ? `${sourceNote}${github.readmeHtml}` : markdown(member.readme || "# Hello\nThis member has not published a README yet.");
+  const readme = document.getElementById("readme");
+  readme.innerHTML = githubReadme ? `${sourceNote}${github.readmeHtml}` : markdown(member.readme || "# Hello\nThis member has not published a README yet.");
+  readme.classList.toggle("readme--github", Boolean(githubReadme));
+  if (githubReadme) {
+    // GitHub honors README image dimensions, including fractional percentages.
+    // Apply them to cached imports too, without trusting arbitrary CSS from the README.
+    readme.querySelectorAll("img[width], img[height], table[width]").forEach((element) => {
+      for (const dimension of ["width", "height"]) {
+        const value = element.getAttribute(dimension);
+        const match = /^(\d{1,4}(?:\.\d+)?)(%)?$/.exec(value || "");
+        if (match) element.style[dimension] = `${match[1]}${match[2] || "px"}`;
+      }
+    });
+  }
   document.getElementById("profileProjects").innerHTML = projects.length ? projects.map((project) => `<a class="project-card" href="/project.html?project=${encodeURIComponent(project.slug)}"><div class="project-card-body"><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p><span class="badge success">Published</span></div></a>`).join("") : '<div class="empty-state"><h3>No public projects</h3><p>Published work will appear here.</p></div>';
 };
 

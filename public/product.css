@@ -140,3 +140,26 @@ body:has(.profile-card) .site-mascot-badge--edge-left{display:none}
 .nfc-card-setting .nfc-card-status{min-height:0;margin:0;font-size:12px}
 @media(max-width:700px){.nfc-card-setting .nfc-card-actions>*{flex:1}}
 .workspace-grid>#projects{align-self:start}
+
+/* Keep imported GitHub README media and tables at their authored dimensions. */
+.readme--github{overflow-x:auto}
+.readme--github h1,.readme--github h2,.readme--github h3{line-height:1.25;letter-spacing:-.02em}
+.readme--github h1{font-size:32px;margin:24px 0 16px}
+.readme--github h2{font-size:24px;margin:24px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--line)}
+.readme--github h3{font-size:19px;margin:20px 0 12px}
+.readme--github img{display:inline-block;max-width:100%;height:auto;margin:0;vertical-align:middle}
+.readme--github table{display:table;width:auto;max-width:100%;overflow:visible;table-layout:auto;border-collapse:collapse;margin:22px 0}
+.readme--github table[align="center"]{margin-inline:auto}
+.readme--github th,.readme--github td{padding:6px 8px;overflow-wrap:normal;vertical-align:middle}
+.readme--github [align="center"]:is(td,th){text-align:center}
+.readme--github [align="right"]:is(td,th){text-align:right}
+.readme--github td h3{font-size:16px;margin:0}
+.readme--github table[width="100%"] td{vertical-align:top}
+.readme--github table[width="100%"] td img{display:block}
+@media(max-width:700px){
+  .readme--github p[align="center"] img[width="48.5%"]{width:100%!important}
+  .readme--github p[align="center"] img[width="3%"]{display:none}
+  .readme--github table[width="50%"]{width:100%!important}
+  .readme--github table[width="50%"] td:first-child{width:30%}
+  .readme--github table[width="100%"] tr,.readme--github table[width="100%"] td{display:block;width:100%!important}
+}
