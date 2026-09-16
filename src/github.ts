@@ -198,21 +198,32 @@ export async function fetchGithubSnapshot(profileUrl: string, previous: GithubPr
   const profile = parseGithubProfileUrl(profileUrl);
   if (!profile) throw new Error("Use a public GitHub profile URL such as https://github.com/UnoxyRich.");
   const encodedUsername = encodeURIComponent(profile.username);
-  let githubUser: any = { avatar_url: previous.avatarUrl || "", name: previous.name || "", bio: previous.bio || "" };
+  let githubUser: any = { avatar_url: previous.avatarUrl || `https://github.com/${encodedUsername}.png`, name: previous.name || "", bio: previous.bio || "" };
   let branch = previous.defaultBranch || "";
+  let triedCommonBranch = false;
   if (!branch) {
-    const [fetchedUser, repository] = await Promise.all([
+    const [fetchedUser, repository] = await Promise.allSettled([
       githubJson(`${GITHUB_API}/users/${encodedUsername}`),
       githubJson(`${GITHUB_API}/repos/${encodedUsername}/${encodedUsername}`),
     ]);
-    if (repository.private || repository.archived) throw new Error("The matching GitHub profile repository must be public and active.");
-    githubUser = fetchedUser;
-    branch = String(repository.default_branch || "main");
+    if (fetchedUser.status === "fulfilled") githubUser = fetchedUser.value;
+    if (repository.status === "fulfilled") {
+      if (repository.value.private || repository.value.archived) throw new Error("The matching GitHub profile repository must be public and active.");
+      branch = String(repository.value.default_branch || "main");
+    } else {
+      branch = "main";
+      triedCommonBranch = true;
+    }
   }
   let context = renderContext(profile.username, profile.username, branch);
   let headers: Record<string, string> = { "user-agent": GITHUB_USER_AGENT };
   if (previous.etag) headers["if-none-match"] = previous.etag;
   let response = await fetch(`${context.rawBase}README.md`, { headers });
+  if (response.status === 404 && triedCommonBranch) {
+    branch = "master";
+    context = renderContext(profile.username, profile.username, branch);
+    response = await fetch(`${context.rawBase}README.md`, { headers: { "user-agent": GITHUB_USER_AGENT } });
+  }
   if (response.status === 404 && previous.defaultBranch) {
     const repository = await githubJson(`${GITHUB_API}/repos/${encodedUsername}/${encodedUsername}`);
     if (repository.private || repository.archived) throw new Error("The matching GitHub profile repository must be public and active.");

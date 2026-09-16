@@ -68,10 +68,10 @@ const renderProfile = () => {
   document.getElementById("displayName").textContent = member.displayName;
   document.getElementById("profileBio").textContent = member.bio || github?.bio || "No public bio yet.";
   document.getElementById("skills").textContent = (member.skills || []).join(" · ") || "Building with AI.";
-  if (avatarUrl) document.getElementById("profileAvatar").src = avatarUrl;
+  document.getElementById("profileAvatar").src = avatarUrl || "/logo-symbol.webp";
   renderProfileRail();
-  const sourceNote = githubReadme ? `<div class="github-readme-source"><span>LIVE FROM GITHUB</span><a href="${escapeHtml(github.profileUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(github.username || "GitHub")} ↗</a></div>` : "";
-  document.getElementById("readme").innerHTML = githubReadme ? `${sourceNote}${github.readmeHtml}` : `<p>${markdown(member.readme || "# Hello\nThis member has not published a README yet.")}</p>`;
+  const sourceNote = githubReadme ? `<div class="github-readme-source"><span>IMPORTED FROM GITHUB</span><a href="${escapeHtml(github.profileUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(github.username || "GitHub")} ↗</a></div>` : "";
+  document.getElementById("readme").innerHTML = githubReadme ? `${sourceNote}${github.readmeHtml}` : markdown(member.readme || "# Hello\nThis member has not published a README yet.");
   document.getElementById("profileProjects").innerHTML = projects.length ? projects.map((project) => `<a class="project-card" href="/project.html?project=${encodeURIComponent(project.slug)}"><div class="project-card-body"><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p><span class="badge success">Published</span></div></a>`).join("") : '<div class="empty-state"><h3>No public projects</h3><p>Published work will appear here.</p></div>';
 };
 
@@ -94,6 +94,40 @@ const readLinksEditor = () => [...linksEditor.querySelectorAll(".link-editor-row
   url: row.querySelector(".link-url-input").value.trim(),
 })).filter((link) => link.label && /^https?:\/\//i.test(link.url));
 
+const nfcCards = document.getElementById("nfcCards");
+const nfcStatus = document.getElementById("nfcStatus");
+const loadMyCards = async () => {
+  const result = await requestJson("/api/nfc/my-cards");
+  if (!result.cards.length) {
+    nfcCards.textContent = "No cards bound yet. Scan a card and choose ‘Bind to my profile’ first.";
+    return;
+  }
+  nfcCards.innerHTML = result.cards.map((card) => `<div class="nfc-card-setting" data-card-id="${escapeHtml(card.id)}"><strong>${escapeHtml(card.label)}</strong><label>Custom tap link<input class="nfc-destination" type="url" inputmode="url" maxlength="500" placeholder="https://example.com/your-page" value="${escapeHtml(card.redirectUrl)}"></label><small>Leave blank for your public profile.</small><div class="nfc-card-actions"><button class="secondary-button nfc-save" type="button">Save link</button><button class="text-button nfc-default" type="button">Use my profile</button></div><p class="status-message nfc-card-status" role="status"></p></div>`).join("");
+  nfcCards.querySelectorAll(".nfc-card-setting").forEach((row) => {
+    const input = row.querySelector(".nfc-destination");
+    const message = row.querySelector(".nfc-card-status");
+    const saveButton = row.querySelector(".nfc-save");
+    const defaultButton = row.querySelector(".nfc-default");
+    const save = async (redirectUrl) => {
+      saveButton.disabled = true;
+      defaultButton.disabled = true;
+      message.textContent = "Saving…";
+      try {
+        const saved = await requestJson(`/api/nfc/my-cards/${encodeURIComponent(row.dataset.cardId)}`, jsonOptions("PUT", { redirectUrl }));
+        input.value = saved.redirectUrl;
+        message.textContent = saved.redirectUrl ? "Card taps now open your custom link." : "Card taps now open your public profile.";
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        saveButton.disabled = false;
+        defaultButton.disabled = false;
+      }
+    };
+    saveButton.onclick = () => save(input.value.trim());
+    defaultButton.onclick = () => save("");
+  });
+};
+
 const load = async () => {
   const me = await requestJson("/api/me").catch(() => ({ user: null }));
   ownUser = me.user;
@@ -103,8 +137,9 @@ const load = async () => {
   member = result.member;
   projects = result.projects || [];
   renderProfile();
-  if (ownUser?.public_slug === slug) {
+  if (ownUser?.public_slug === member.slug) {
     Motion.show(document.getElementById("editToggle"));
+    document.getElementById("avatarActions").classList.remove("hidden");
     document.getElementById("englishName").value = ownUser.english_name || "";
     document.getElementById("chineseName").value = ownUser.chinese_name || "";
     document.getElementById("wechatId").value = ownUser.wechat_id || "";
@@ -118,6 +153,7 @@ const load = async () => {
     document.getElementById("githubReadmeEnabled").checked = Boolean(ownUser.github_readme_enabled);
     document.getElementById("readmeDraft").value = ownUser.readme_draft || "";
     renderLinksEditor(ownUser.links || []);
+    await loadMyCards().catch((error) => { nfcStatus.textContent = error.message; });
     if (params.get("edit") === "1") Motion.show(document.getElementById("profileEditor"));
   }
 };
@@ -125,14 +161,44 @@ const load = async () => {
 document.getElementById("editToggle").onclick = () => Motion.toggle(document.getElementById("profileEditor"));
 document.getElementById("readmeTab").onclick = async () => { await Motion.swap(document.getElementById("profileProjects"), document.getElementById("readme")); document.getElementById("readmeTab").setAttribute("aria-selected", "true"); document.getElementById("projectsTab").setAttribute("aria-selected", "false"); };
 document.getElementById("projectsTab").onclick = async () => { await Motion.swap(document.getElementById("readme"), document.getElementById("profileProjects")); document.getElementById("readmeTab").setAttribute("aria-selected", "false"); document.getElementById("projectsTab").setAttribute("aria-selected", "true"); };
-document.getElementById("previewReadme").onclick = () => { document.getElementById("readme").innerHTML = `<p>${markdown(document.getElementById("readmeDraft").value)}</p>`; document.getElementById("readme").scrollIntoView({ behavior: "smooth" }); };
+document.getElementById("previewReadme").onclick = () => { document.getElementById("readme").innerHTML = markdown(document.getElementById("readmeDraft").value); document.getElementById("readme").scrollIntoView({ behavior: "smooth" }); };
 document.getElementById("addProfileLink").onclick = () => addLinkRow();
+
+const avatarInput = document.getElementById("avatarFile");
+const avatarStatus = document.getElementById("avatarStatus");
+document.getElementById("changeAvatar").onclick = () => avatarInput.click();
+avatarInput.onchange = async () => {
+  const file = avatarInput.files?.[0];
+  if (!file) return;
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 2_000_000) {
+    avatarStatus.textContent = "Choose a PNG, JPG, or WebP image under 2 MB.";
+    avatarInput.value = "";
+    return;
+  }
+  avatarStatus.textContent = "Uploading photo…";
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Could not read that photo."));
+      reader.readAsDataURL(file);
+    });
+    await requestJson("/api/profile-image", jsonOptions("POST", { dataUrl }));
+    member.profileImageUrl = `/api/profile-image/${ownUser.id}?v=${Date.now()}`;
+    renderProfile();
+    avatarStatus.textContent = "Profile photo updated.";
+  } catch (error) {
+    avatarStatus.textContent = error.message;
+  } finally {
+    avatarInput.value = "";
+  }
+};
 
 const profileForm = document.getElementById("profileForm");
 const profileMessage = document.getElementById("profileMessage");
 const githubProfileUrl = document.getElementById("githubProfileUrl");
 const githubReadmeEnabled = document.getElementById("githubReadmeEnabled");
-const saveProfile = async () => {
+const saveProfile = async ({ refresh = true } = {}) => {
   const data = Object.fromEntries(new FormData(profileForm));
   data.skills = String(data.skillsInput || "").split(",").map((item) => item.trim()).filter(Boolean);
   data.links = readLinksEditor();
@@ -142,24 +208,13 @@ const saveProfile = async () => {
   data.privacy = { ...(ownUser?.privacy || {}), wechatPublic: document.getElementById("showWechatPublic").checked, emailPublic: document.getElementById("showEmailPublic").checked };
   delete data.skillsInput;
   await requestJson("/api/profile", jsonOptions("PUT", data));
-  if (ownUser) {
-    ownUser.email = data.email;
-    ownUser.links = data.links;
-    ownUser.privacy = data.privacy;
-    ownUser.github_profile_url = data.githubProfileUrl;
-    ownUser.github_readme_enabled = data.githubReadmeEnabled ? 1 : 0;
-  }
-  if (member) {
-    member.links = data.links;
-    member.contacts = { wechatId: data.privacy.wechatPublic ? data.wechatId : null, email: data.privacy.emailPublic ? data.email : null };
-  }
+  if (refresh) await load();
 };
 
 profileForm.onsubmit = async (event) => {
   event.preventDefault();
   try {
     await saveProfile();
-    renderProfile();
     profileMessage.textContent = "Profile draft saved.";
   } catch (error) {
     profileMessage.textContent = error.message;
@@ -177,14 +232,15 @@ document.getElementById("syncGithub").onclick = async () => {
   button.textContent = "Syncing GitHub README…";
   githubReadmeEnabled.checked = true;
   profileMessage.textContent = "";
+  let profileSaved = false;
   try {
-    await saveProfile();
-    const result = await requestJson("/api/profile/github/sync", jsonOptions("POST", {}));
-    member.github = result.github;
-    renderProfile();
+    await saveProfile({ refresh: false });
+    profileSaved = true;
+    await requestJson("/api/profile/github/sync", jsonOptions("POST", {}));
+    await load();
     profileMessage.textContent = "GitHub README imported. It will refresh automatically when your public README changes.";
   } catch (error) {
-    profileMessage.textContent = error.message;
+    profileMessage.textContent = profileSaved ? `${error.message} Your profile link was saved; your published README remains available.` : error.message;
   } finally {
     button.disabled = false;
     button.textContent = "Use GitHub profile README ↗";
@@ -195,6 +251,7 @@ document.getElementById("publishReadme").onclick = async () => {
   try {
     await saveProfile();
     await requestJson("/api/profile/readme/publish", jsonOptions("POST", {}));
+    await load();
     profileMessage.textContent = "README published.";
   } catch (error) {
     profileMessage.textContent = error.message;

@@ -1,5 +1,5 @@
 import type { Env } from "./index";
-import { cookie, csrfValid, json, readCookie, withinRateLimit } from "./index";
+import { csrfValid, json } from "./index";
 import { fetchGithubSnapshot, parseGithubProfileUrl } from "./github";
 
 const now = () => new Date().toISOString();
@@ -21,35 +21,9 @@ const voteVariants = [
   { slug: "cloud-cat", name: "Cloud Cat", description: "An airy, gentle card that feels like a tiny piece of the club sky.", palette: "Baby blue · sky blue · deep blue" },
   { slug: "after-school-club", name: "After-School Club", description: "Notebook doodles, laptop energy, and a little more personality.", palette: "White · light blue · royal blue" },
 ] as const;
-const voteVariantSlugs = new Set<string>(voteVariants.map((variant) => variant.slug));
-
 async function hashNfcToken(token: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function hashVoteValue(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function voteIdentity(request: Request, browserSignal = "") {
-  let deviceCookie = readCookie(request, "nvnc_vote_device");
-  const issued = !/^[A-Za-z0-9-]{20,100}$/.test(deviceCookie);
-  if (issued) deviceCookie = crypto.randomUUID();
-  const browserHeaders = [
-    request.headers.get("user-agent"),
-    request.headers.get("accept-language"),
-    request.headers.get("sec-ch-ua"),
-    request.headers.get("sec-ch-ua-platform"),
-    request.headers.get("sec-ch-ua-mobile"),
-  ].map((value) => String(value || "").slice(0, 240)).join("\u001f");
-  const signal = String(browserSignal || "").trim().slice(0, 1200);
-  return {
-    cookieHash: await hashVoteValue(deviceCookie),
-    fingerprintHash: await hashVoteValue(`${browserHeaders}\u001e${signal}`),
-    setCookie: issued ? cookie("nvnc_vote_device", deviceCookie, 31536000) : "",
-  };
 }
 
 function createNfcToken() {
@@ -102,7 +76,7 @@ function publicUser(user: any, includeGithubReadme = false, teams: any[] = []) {
     skills: parsed(user.skills_json, []),
     links: parsed(user.links_json, []),
     readme: user.readme_published,
-    profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : user.github_avatar_url || null,
+    profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}?v=${encodeURIComponent(user.updated_at || "1")}` : user.github_avatar_url || null,
     github: publicGithub(user, includeGithubReadme),
     contacts: publicContacts(user),
     teams: teams.map((team) => ({ slug: team.slug, name: team.name, role: team.role })),
@@ -172,44 +146,24 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   const body = ["POST", "PUT"].includes(request.method) ? await request.clone().json<any>() : {};
 
   if (path === "/api/vote/results" && request.method === "GET") {
-    const identity = await voteIdentity(request, request.headers.get("x-device-fingerprint") || "");
-    const [stats, mine, completedVoters] = await Promise.all([
+    const [stats, completedVoters] = await Promise.all([
       env.DB.prepare("SELECT variant_slug, COUNT(*) AS count, AVG(rating) AS average FROM design_ratings GROUP BY variant_slug").all<any>(),
-      env.DB.prepare("SELECT variant_slug, rating FROM design_ratings WHERE voter_cookie_hash=? OR device_fingerprint_hash=? ORDER BY created_at ASC").bind(identity.cookieHash, identity.fingerprintHash).all<any>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM (SELECT voter_cookie_hash FROM design_ratings GROUP BY voter_cookie_hash HAVING COUNT(DISTINCT variant_slug)=5)").first<any>(),
     ]);
     const statsMap = new Map(stats.results.map((row: any) => [row.variant_slug, row]));
-    const mineMap = new Map(mine.results.map((row: any) => [row.variant_slug, Number(row.rating)]));
-    const completed = voteVariants.every((variant) => mineMap.has(variant.slug));
     const variants = voteVariants.map((variant) => {
       const stat = statsMap.get(variant.slug);
       return {
         ...variant,
-        averageRating: completed && stat ? Number(Number(stat.average).toFixed(2)) : null,
-        ratingCount: completed && stat ? Number(stat.count) || 0 : null,
+        averageRating: stat ? Number(Number(stat.average).toFixed(2)) : null,
+        ratingCount: stat ? Number(stat.count) || 0 : 0,
       };
     });
-    return json({ variants, completed, ratings: [...mineMap].map(([variant, rating]) => ({ variant, rating })), totalVoters: Number(completedVoters?.count) || 0 }, {
-      headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {},
-    });
+    return json({ variants, closed: true, winner: "cloud-cat", totalVoters: Number(completedVoters?.count) || 0 });
   }
 
   if (path === "/api/vote" && request.method === "POST") {
-    if (!withinRateLimit(request, "design-rating", 30, 3600000)) return json({ error: "Too many rating attempts. Please try again later." }, { status: 429, headers: { "retry-after": "3600" } });
-    const variant = String(body.variant || "").trim();
-    if (!voteVariantSlugs.has(variant)) return json({ error: "Choose one of the five card concepts." }, { status: 400 });
-    const rating = Number(body.rating);
-    if (!Number.isInteger(rating) || rating < 0 || rating > 5) return json({ error: "Choose a rating from 0 to 5 stars." }, { status: 400 });
-    const identity = await voteIdentity(request, typeof body.deviceFingerprint === "string" ? body.deviceFingerprint : request.headers.get("x-device-fingerprint") || "");
-    try {
-      await env.DB.prepare("INSERT INTO design_ratings (id,variant_slug,rating,voter_cookie_hash,device_fingerprint_hash,created_at) VALUES (?,?,?,?,?,?)")
-        .bind(id(), variant, rating, identity.cookieHash, identity.fingerprintHash, now()).run();
-    } catch (error) {
-      if (String(error).includes("UNIQUE")) return json({ error: "You have already rated this card from this browser or device." }, { status: 409 });
-      throw error;
-    }
-    const progress = await env.DB.prepare("SELECT COUNT(DISTINCT variant_slug) AS count FROM design_ratings WHERE voter_cookie_hash=? OR device_fingerprint_hash=?").bind(identity.cookieHash, identity.fingerprintHash).first<any>();
-    return json({ ok: true, variant, rating, completed: Number(progress?.count) === voteVariants.length }, { status: 201, headers: identity.setCookie ? { "set-cookie": identity.setCookie } : {} });
+    return json({ error: "Card rating has closed. Cloud Cat is the selected design." }, { status: 410 });
   }
 
   if (path === "/api/me" && request.method === "GET") {
@@ -218,7 +172,7 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
       skills: parsed(user.skills_json, []),
       links: parsed(user.links_json, []),
       privacy: parsed(user.privacy_json, {}),
-      profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}` : null,
+      profileImageUrl: user.profile_image_key ? `/api/profile-image/${user.id}?v=${encodeURIComponent(user.updated_at || "1")}` : null,
       github: publicGithub(user),
     } : null });
   }
@@ -287,6 +241,37 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
     return json({ ok: true, cards }, { status: 201 });
   }
 
+  if (path === "/api/nfc/my-cards" && request.method === "GET") {
+    if (!user) return json({ error: "Please sign in." }, { status: 401 });
+    const cards = await env.DB.prepare("SELECT id,label,redirect_url,scan_count FROM nfc_cards WHERE claimed_by_user_id=? AND status='claimed' ORDER BY claimed_at ASC").bind(user.id).all<any>();
+    return json({ cards: cards.results.map((card: any) => ({ id: card.id, label: card.label, redirectUrl: card.redirect_url || "", scanCount: card.scan_count })) });
+  }
+
+  const myNfcCard = path.match(/^\/api\/nfc\/my-cards\/([^/]+)$/);
+  if (myNfcCard && request.method === "PUT") {
+    if (!user) return json({ error: "Please sign in." }, { status: 401 });
+    if (typeof body.redirectUrl !== "string") return json({ error: "Enter a destination URL or leave it blank for your profile." }, { status: 400 });
+    const rawDestination = body.redirectUrl.trim();
+    let destination: string | null = null;
+    if (rawDestination) {
+      if (rawDestination.length > 500) return json({ error: "Destination URLs must be 500 characters or fewer." }, { status: 400 });
+      try {
+        const parsedDestination = new URL(rawDestination);
+        if (!["http:", "https:"].includes(parsedDestination.protocol) || !parsedDestination.hostname || parsedDestination.username || parsedDestination.password)
+          return json({ error: "Use a full http:// or https:// URL without a username or password." }, { status: 400 });
+        if (parsedDestination.host === url.host && parsedDestination.pathname.startsWith("/nfc/"))
+          return json({ error: "An NFC link cannot redirect to another NFC scan link." }, { status: 400 });
+        destination = parsedDestination.href;
+      } catch {
+        return json({ error: "Enter a valid http:// or https:// URL." }, { status: 400 });
+      }
+    }
+    const updated = await env.DB.prepare("UPDATE nfc_cards SET redirect_url=?,updated_at=? WHERE id=? AND claimed_by_user_id=? AND status='claimed'")
+      .bind(destination, now(), myNfcCard[1], user.id).run();
+    if (!Number((updated as any).meta?.changes || 0)) return json({ error: "That card is not bound to your profile." }, { status: 404 });
+    return json({ ok: true, redirectUrl: destination || "" });
+  }
+
   const nfcCard = path.match(/^\/api\/nfc\/cards\/([^/]+)$/);
   if (nfcCard && request.method === "GET") {
     const tokenHash = await hashNfcToken(decodeURIComponent(nfcCard[1]));
@@ -299,7 +284,7 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
       if (card.status !== "unclaimed") await env.DB.prepare("UPDATE nfc_cards SET status='unclaimed',claimed_at=NULL,updated_at=? WHERE id=? AND claimed_by_user_id IS NULL").bind(timestamp, card.id).run();
       return json({ status: "available", label: card.label });
     }
-    return json({ status: "claimed", profileUrl: `/user/${encodeURIComponent(card.public_slug)}` });
+    return json({ status: "claimed", profileUrl: `/user/${encodeURIComponent(card.public_slug)}`, destinationUrl: card.redirect_url || `/user/${encodeURIComponent(card.public_slug)}` });
   }
 
   const nfcClaim = path.match(/^\/api\/nfc\/cards\/([^/]+)\/claim$/);

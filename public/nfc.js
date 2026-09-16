@@ -42,7 +42,7 @@ const load = async () => {
     requestJson("/api/me").catch(() => ({ user: null })),
   ]);
   if (card.status === "disabled") return showError("This card has been disabled. Please ask a club leader for help.");
-  if (card.status === "claimed") return location.replace(card.profileUrl);
+  if (card.status === "claimed") return location.replace(card.destinationUrl || card.profileUrl);
   heading.textContent = "Claim your profile card";
   message.textContent = `This card is ready${card.label ? ` · ${card.label}` : ""}. Bind it once and future scans will open your public profile.`;
   if (me.user) return claim(me.user, card);

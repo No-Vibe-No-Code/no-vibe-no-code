@@ -1,69 +1,72 @@
 # No Vibe No Code
 
-An interactive bilingual website and member portal for a student-led AI maker
-club. The site introduces the club, publishes competition details, registers
-members, and gives club leaders a lightweight administration surface.
+A bilingual website and member portal for a student-led AI maker club. Members
+can create public profiles, share projects, join teams, and claim NFC profile
+cards. Club leaders manage accounts, forms, projects, and card issuance.
 
 [Visit the live site](https://novibenocode.ccwu.cc)
 
 ![No Vibe No Code homepage](docs/screenshots/home.png)
 
-![AI Companion competition](docs/screenshots/competition.png)
+## Current member experience
 
-## Highlights
+- Create an account and edit a public profile at `/profile.html?edit=1`. The
+  owner can upload a PNG, JPG, or WebP photo under 2 MB, write a bio and README,
+  add public links, and choose which contact details to publish.
+- Import a public GitHub profile README from the matching
+  `username/username` repository. The last successful import remains visible
+  if GitHub is temporarily unavailable. Members can also publish a local README.
+- Claim a card on its first `/nfc/<token>` scan after signing in or creating an
+  account. Later scans open the owner's public profile by default. The owner
+  can set or clear a separate HTTP(S) destination for each claimed card under
+  **Edit profile → My NFC cards**. Card tokens stay on the physical card and
+  are not returned by the profile settings API.
+- View the closed card-design vote at `/vote`. Cloud Cat won with the highest
+  average rating. The page displays the selected front and back art and final
+  participation totals; new ratings are rejected by the API.
+- Visit `/chart` for a separate site redirect to the linked YouTube video.
 
-- English and Simplified Chinese content with an instant language switcher
-- Cursor-reactive 3D club mark and a recruitment-first join flow
-- Responsive club, activity, competition, member-directory, and contact sections
-- Lightweight interest registration with optional account creation
-- Member and non-member registration with timed terms acceptance
-- Secure account sessions and editable member profiles
-- PNG, JPEG, and WebP profile-image uploads
-- Optional GitHub profile README mirroring with image/link resolution and ETag refreshes
-- Role-aware administration for leaders, teachers, and maintainers
-- Cloudflare-native storage with D1 and R2
+The selected card artwork is stored at
+[`public/card-variants/cloud-cat-front.png`](public/card-variants/cloud-cat-front.png)
+and [`public/card-variants/cloud-cat-back.png`](public/card-variants/cloud-cat-back.png).
+These are the original supplied PNGs, without cropping or recompression.
 
 ## Tech stack
 
 | Layer | Technology |
 | --- | --- |
 | Frontend | Semantic HTML, modern CSS, vanilla JavaScript |
-| Motion | CSS 3D transforms, Canvas API, Anime.js |
-| Runtime | Cloudflare Workers |
-| Static hosting | Cloudflare Workers Static Assets |
+| Runtime and static assets | Cloudflare Workers |
 | Database | Cloudflare D1 |
-| Object storage | Cloudflare R2 |
-| Authentication | PBKDF2-SHA-256 password hashing and secure HTTP-only cookies |
-| Tooling | TypeScript, Wrangler, npm |
+| Profile photos | Cloudflare R2 |
+| Authentication | PBKDF2-SHA-256 passwords, secure HTTP-only session cookies |
+| Build and deployment | TypeScript, esbuild, Wrangler, npm |
 
-## Architecture
+The Worker in `src/index.ts` handles API routing and friendly site routes.
+`src/workspace.ts` implements member, project, vote-result, and NFC APIs.
+`src/github.ts` imports and sanitizes public GitHub README content. Static
+pages and browser scripts live in `public/`; schema changes live in
+`migrations/`.
 
-```text
-Browser
-├── Static site ─────────────── Cloudflare Workers Static Assets
-└── /api requests ───────────── Worker router (src/index.ts)
-                                ├── users, sessions, settings ── D1
-                                ├── GitHub README snapshots ──── D1
-                                └── profile images ───────────── R2
-```
+## NFC and vote APIs
 
-The Worker serves static files from `public/` and handles all `/api/*` routes.
-Passwords are derived with PBKDF2-SHA-256 before storage. Session identifiers
-are stored in D1 and sent only through `Secure`, `HttpOnly`, `SameSite=Lax`
-cookies. A member can opt into mirroring the public `README.md` from their
-same-name GitHub profile repository. Enabled mirrors refresh on public profile
-reads with conditional GitHub requests and keep the last successful snapshot
-when GitHub is unavailable.
+| Route | Purpose |
+| --- | --- |
+| `GET /api/nfc/cards/<token>` | Check a card and record a scan |
+| `POST /api/nfc/cards/<token>/claim` | Bind an unclaimed card to the signed-in member |
+| `GET /api/nfc/my-cards` | List the signed-in member's claimed cards without their tokens |
+| `PUT /api/nfc/my-cards/<id>` | Set `redirectUrl` to an HTTP(S) URL, or `""` for the profile default |
+| `GET /api/vote/results` | Public final ratings and selected winner |
+| `POST /api/vote` | Returns HTTP 410 because the vote is closed |
+
+`migrations/0008_nfc_redirects.sql` adds the per-card destination. Existing
+cards keep the profile default until their owners choose another link. Do not
+put generated NFC token URLs in Git, logs, screenshots, or public documents.
 
 ## Local development
 
-### Prerequisites
-
-- Node.js 20 or newer
-- npm
-- A Cloudflare account for remote D1/R2 development and deployment
-
-### Install and run
+Requires Node.js 20 or newer, npm, and Wrangler access to the configured
+Cloudflare account for deployment.
 
 ```bash
 npm install
@@ -71,43 +74,25 @@ npx wrangler d1 migrations apply no-vibe-no-code --local
 npm run dev
 ```
 
-Wrangler prints the local URL, normally `http://localhost:8787`.
-
-### Validate a production build
+Wrangler normally serves the site at `http://localhost:8787`. Build the
+browser scripts and dry-run the Worker bundle with:
 
 ```bash
 npm run check
 ```
 
-## Cloudflare setup
-
-Create the required resources when deploying into a new Cloudflare account:
+For a new Cloudflare account, create the D1 database and R2 bucket named in
+`wrangler.toml`, update the D1 database ID, and configure the initial leader
+secrets. Apply all migrations before deploying:
 
 ```bash
-npx wrangler d1 create no-vibe-no-code
-npx wrangler r2 bucket create no-vibe-no-code-profile-images
 npx wrangler d1 migrations apply no-vibe-no-code --remote
+npm run deploy
 ```
 
-Copy the generated D1 database ID into `wrangler.toml`, then configure the
-initial club leader:
-
-```bash
-npx wrangler secret put INITIAL_LEADER_DISPLAY_NAME
-npx wrangler secret put INITIAL_LEADER_PASSWORD
-```
-
-The initial leader is created on the first successful login when the users
-table is empty.
-
-Deploy the Worker and static assets:
-
-```bash
-npx wrangler deploy
-```
-
-The included Wrangler configuration targets the custom domain
-`novibenocode.ccwu.cc`.
+The deployment script builds the browser assets before publishing. The
+Wrangler configuration targets `novibenocode.ccwu.cc`. Verify the live custom
+domain separately after each deployment.
 
 ## Project structure
 
@@ -115,25 +100,12 @@ The included Wrangler configuration targets the custom domain
 .
 ├── docs/screenshots/       README screenshots
 ├── migrations/             D1 schema migrations
-├── public/
-│   ├── admin.html          Role-protected administration UI
-│   ├── app.js              Localization, motion, and browser interactions
-│   ├── index.html          Main website and account dialogs
-│   └── styles.css          Responsive layout and visual system
-├── src/index.ts            Worker API and static-asset router
-├── src/github.ts            GitHub fetching, URL resolution, and safe rendering
-├── package.json            Scripts and dependencies
-└── wrangler.toml           Cloudflare bindings and deployment configuration
+├── public/                 Pages, scripts, styles, and card artwork
+├── src/index.ts            Worker router and legacy account API
+├── src/workspace.ts        Member, project, NFC, and vote APIs
+├── src/github.ts           GitHub README import and safe rendering
+├── package.json            Build and deployment scripts
+└── wrangler.toml           Cloudflare bindings and custom domain
 ```
-
-## Available scripts
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the local Wrangler development server |
-| `npm run check` | Build a deployment bundle without publishing |
-| `npm run deploy` | Deploy the Worker and static assets |
-
-## License
 
 Released under the [MIT License](LICENSE).
