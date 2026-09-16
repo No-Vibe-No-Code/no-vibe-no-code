@@ -274,6 +274,9 @@ export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === "/chart" || url.pathname === "/chart/") {
+        return withSecurityHeaders(Response.redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ", 302), request);
+      }
       if (url.pathname.startsWith("/api/")) {
         const workspaceResponse = await workspaceApi(request, env);
         return withSecurityHeaders(workspaceResponse || await legacyApi(request, env), request);
