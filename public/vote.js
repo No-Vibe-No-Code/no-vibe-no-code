@@ -15,7 +15,8 @@ requestJson("/api/vote/results").then((result) => {
   if (!result.closed || !winner) throw new Error("Final results are unavailable right now.");
   document.getElementById("winnerAverage").textContent = winner.averageRating === null ? "—" : Number(winner.averageRating).toFixed(2);
   document.getElementById("totalVoters").textContent = Number(result.totalVoters) || 0;
-  document.getElementById("voteSummary").textContent = `${winner.ratingCount} ratings for Cloud Cat · voting is now closed.`;
+  const ratingCount = Number(winner.ratingCount) || 0;
+  document.getElementById("voteSummary").textContent = `${ratingCount} rating${ratingCount === 1 ? "" : "s"} for Cloud Cat · voting is now closed.`;
 }).catch((error) => {
   document.getElementById("voteSummary").textContent = "Cloud Cat is the selected design. Final rating totals are temporarily unavailable.";
   document.getElementById("voteStatus").textContent = error.message;
