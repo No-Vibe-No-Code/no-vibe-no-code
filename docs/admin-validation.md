@@ -28,10 +28,14 @@ accounts or generated NFC token URLs should be copied into production or docs.
 
 ## Rollout checks
 
-- Apply `0010_admin_workspace.sql` locally before testing or running the new
-  Worker. It adds columns and indexes without dropping existing records.
-- Run the remote migration before deployment, then deploy the Worker with the
-  one-minute scheduled trigger from `wrangler.toml`.
-- Verify custom-domain routes and staff-only API responses after deployment.
-  A live public route check cannot establish authenticated staff behavior;
-  use a real staff session for that final acceptance check.
+- Applied `0010_admin_workspace.sql` locally in the fixture and remotely before
+  Worker deployment. The remote migration list then reported no pending work.
+- Deployed the Worker and five changed assets through `npm run deploy`. Wrangler
+  reported the custom domain and the `* * * * *` scheduled trigger.
+- Verified the live custom domain returned HTTP 200 for all eight admin routes.
+  Unauthenticated requests to `/api/admin/dashboard` and
+  `/api/admin/nfc-cards` returned HTTP 401. Opening `/admin` in a fresh live
+  browser tab reached sign-in with `returnTo=/admin`.
+- Authenticated live staff behavior is **not yet verified**: no production
+  staff credentials were used in this run. Local role fixtures and denied
+  actions passed, but a real staff session remains the final acceptance check.
