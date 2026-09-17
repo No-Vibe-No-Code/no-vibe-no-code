@@ -13,3 +13,5 @@
 .aw-revision-links{margin:16px 0 20px}
 .aw-sidebar[hidden],.aw-menu[hidden]{display:none!important}
 .aw-shell.aw-access-denied{display:block}
+@media(max-width:820px){.aw-sidebar{transition:none!important}.aw-menu{display:inline-flex;gap:8px;align-items:center;justify-content:center;min-width:44px;min-height:44px;width:auto;height:auto;padding:6px 2px;border:0;background:transparent;font-size:13px;font-weight:650}.aw-menu:focus-visible{outline:3px solid #68bbed;outline-offset:2px}}
+.aw-toast{transform:none;translate:-50% 0}

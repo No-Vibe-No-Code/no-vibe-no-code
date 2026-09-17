@@ -6,7 +6,7 @@
     "dev": "wrangler dev",
     "test:workspace": "npm run build:assets && node tests/workspace.mjs",
     "test:admin": "npm run build:assets && node tests/admin.mjs",
-    "build:assets": "esbuild public/app.js public/admin.js public/shared.js public/product-motion.js public/home.js public/workspace-shell.js public/workspace.js public/profile.js public/gallery.js public/form.js public/project.js public/members.js public/nfc.js public/vote.js public/mobile-shell.js --minify --format=iife --outdir=public/min --entry-names=[name]",
+    "build:assets": "esbuild public/app.js public/admin.js public/shared.js public/product-motion.js public/home.js public/workspace-shell.js public/workspace.js public/profile.js public/gallery.js public/form.js public/project.js public/members.js public/nfc.js public/vote.js public/mobile-shell.js --bundle --minify --format=iife --outdir=public/min --entry-names=[name]",
     "deploy": "npm run build:assets && wrangler deploy",
     "check": "npm run build:assets && wrangler deploy --dry-run"
   },
@@ -15,6 +15,7 @@
     "wrangler": "^4.127.1"
   },
   "dependencies": {
+    "animejs": "^4.5.0",
     "marked": "^18.0.13"
   }
 }

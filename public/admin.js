@@ -25,7 +25,16 @@
   const card = (title,body,href='') => '<section class="aw-card"><header><h2>' + e(title) + '</h2>' + (href?'<a href="' + e(href) + '">View all →</a>':'') + '</header><div class="aw-card-body">' + body + '</div></section>';
   const tabs = (items,active) => '<nav class="aw-tabs" aria-label="Detail sections">' + items.map(x=>'<a href="' + e(x[1]) + '"' + (x[0]===active?' aria-current="page"':'') + '>' + e(x[0]) + '</a>').join('') + '</nav>';
   const noteHtml = notes => notes?.length ? notes.map(n=>'<div class="aw-note"><p>' + e(n.body) + '</p><small>' + e(n.author||'Staff') + ' · ' + e(date(n.created_at)) + '</small></div>').join('') : '<p class="aw-muted">No staff notes yet.</p>';
-  const toast = (message,error=false) => {clearTimeout(toastTimer);toastNode.textContent=message;toastNode.classList.toggle('is-error',error);toastNode.hidden=false;toastTimer=setTimeout(()=>toastNode.hidden=true,5000);};
+  const toast = (message,error=false) => {
+    clearTimeout(toastTimer);
+    toastNode.textContent=message;
+    toastNode.classList.toggle('is-error',error);
+    toastNode.hidden=false;
+    window.NVNCMotion.run(toastNode,{y:[12,0]},{duration:240});
+    toastTimer=setTimeout(async()=>{
+      if(await window.NVNCMotion.run(toastNode,{y:[0,10]},{duration:180,ease:'in(3)'}))toastNode.hidden=true;
+    },5000);
+  };
   async function mutate(url,method,data){return api(url,json(method,data));}
   async function run(action){try{await action();}catch(err){toast(err.message,true);}}
   function confirmAction(title,message) {
@@ -34,9 +43,9 @@
     document.getElementById('confirmText').textContent=message;
     return new Promise(resolve=>{
       const accept=document.getElementById('confirmAccept'),cancel=document.getElementById('confirmCancel');
-      const done=value=>{accept.onclick=null;cancel.onclick=null;dialog.oncancel=null;dialog.close();resolve(value);};
+      const done=async value=>{accept.onclick=null;cancel.onclick=null;dialog.oncancel=null;await window.NVNCMotion.closeDialog(dialog);resolve(value);};
       accept.onclick=()=>done(true);cancel.onclick=()=>done(false);dialog.oncancel=event=>{event.preventDefault();done(false);};
-      dialog.showModal();cancel.focus();
+      window.NVNCMotion.openDialog(dialog);cancel.focus();
     });
   }
   function pageNav(result){
@@ -473,15 +482,37 @@
   });
   const menu=document.getElementById('adminMenu'),scrim=document.getElementById('adminScrim');
   const sidebar=document.getElementById('adminSidebar'),main=document.querySelector('.aw-main');
+  let menuAnimation,menuRevision=0;
   function setMenu(open){
-    document.body.classList.toggle('aw-menu-open',open);
-    menu.setAttribute('aria-expanded',String(open));scrim.hidden=!open;main.inert=open;
-    document.body.style.overflow=open?'hidden':'';
-    if(open){sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('aria-label','Administration menu');nav.querySelector('a')?.focus();}
-    else{sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('aria-label');menu.focus();}
+    const revision=++menuRevision;
+    menuAnimation?.cancel();
+    const finishClose=()=>{
+      if(revision!==menuRevision)return;
+      document.body.classList.remove('aw-menu-open');
+      sidebar.style.transform='';sidebar.style.willChange='';
+      scrim.hidden=true;main.inert=false;document.body.style.overflow='';
+      sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('aria-label');
+      menu.focus();
+    };
+    menu.setAttribute('aria-expanded',String(open));
+    if(open){
+      const wasOpen=document.body.classList.contains('aw-menu-open');
+      document.body.classList.add('aw-menu-open');
+      scrim.hidden=false;main.inert=true;document.body.style.overflow='hidden';
+      sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('aria-label','Administration menu');
+      if(!wasOpen)sidebar.style.transform='translateX(-101%)';
+      if(!window.NVNCMotion.isReduced()){
+        sidebar.style.willChange='transform';
+        menuAnimation=window.NVNCMotion.animate(sidebar,{x:'0%',duration:290,ease:'out(4)',onComplete:()=>{if(revision===menuRevision){sidebar.style.transform='';sidebar.style.willChange='';}}});
+      }else sidebar.style.transform='';
+      nav.querySelector('a')?.focus();
+    }else if(window.NVNCMotion.isReduced())finishClose();
+    else{
+      sidebar.style.willChange='transform';
+      menuAnimation=window.NVNCMotion.animate(sidebar,{x:'-101%',duration:190,ease:'in(3)',onComplete:finishClose});
+    }
   }
   menu.onclick=()=>setMenu(!document.body.classList.contains('aw-menu-open'));scrim.onclick=()=>setMenu(false);
-  document.getElementById('adminSidebarClose').onclick=()=>setMenu(false);
   sidebar.addEventListener('click',event=>{if(event.target.closest('a')&&document.body.classList.contains('aw-menu-open'))setMenu(false);});
   document.addEventListener('keydown',event=>{
     if(!document.body.classList.contains('aw-menu-open'))return;

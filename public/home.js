@@ -1,3 +1,5 @@
+import './product-motion.js';
+
 (() => {
   const {requestJson:request,escapeHtml:e}=window.NVNC;
   const {requireUser,icon}=window.NVNCWorkspace;

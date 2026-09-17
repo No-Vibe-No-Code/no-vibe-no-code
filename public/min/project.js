@@ -1,1 +1,1 @@
-(()=>{(()=>{const e=new URLSearchParams(location.search),o=e.get("project");o?(e.delete("project"),location.replace("/projects/"+encodeURIComponent(o)+(e.size?"?"+e:""))):location.replace("/gallery")})();})();
+(()=>{(()=>{let e=new URLSearchParams(location.search),o=e.get("project");o?(e.delete("project"),location.replace("/projects/"+encodeURIComponent(o)+(e.size?"?"+e:""))):location.replace("/gallery")})();})();

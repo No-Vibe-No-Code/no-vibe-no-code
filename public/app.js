@@ -4,74 +4,7 @@ const startupStartedAt = performance.now();
 const introHooks = [];
 const onIntro = (hook) => introHooks.push(hook);
 let introStarted = false;
-const animationGroups = [];
-let animationFrame = 0;
-const easing = (name, value) => {
-  const match = /^out\((\d+)\)$/.exec(name || "");
-  return match ? 1 - Math.pow(1 - value, Number(match[1])) : value;
-};
-const stagger = (amount = 0, options = {}) => (target, index) =>
-  (options.start || 0) + amount * index;
-const renderAnimations = (time) => {
-  animationFrame = 0;
-  for (let index = animationGroups.length - 1; index >= 0; index -= 1) {
-    const group = animationGroups[index];
-    let groupActive = false;
-    group.items.forEach((item) => {
-      const progress = Math.max(0, Math.min(1, (time - item.startAt) / group.duration));
-      const eased = easing(group.ease, progress);
-      if (progress < 1) groupActive = true;
-      item.target.style.transform = item.transform(eased);
-    });
-    if (!groupActive && !group.completed) {
-      group.completed = true;
-      group.items.forEach((item) => {
-        item.target.style.willChange = "";
-      });
-      if (group.onComplete) group.onComplete();
-    }
-    if (!groupActive) animationGroups.splice(index, 1);
-  }
-  if (animationGroups.length) animationFrame = requestAnimationFrame(renderAnimations);
-};
-const animate = (targets, config) => {
-  const items = Array.from(targets || []).filter(Boolean);
-  if (!items.length) return;
-  const startAt = performance.now();
-  const duration = config.duration === undefined ? 950 : config.duration;
-  const group = {
-    duration,
-    ease: config.ease,
-    onComplete: config.onComplete,
-    completed: false,
-    items: items.map((target, index) => {
-      const resolve = (property) => {
-        const value = typeof config[property] === "function" ? config[property](target, index) : config[property];
-        return Array.isArray(value) ? value : [0, 0];
-      };
-      const translateX = resolve("translateX");
-      const translateY = resolve("translateY");
-      const rotate = resolve("rotate");
-      const hasTranslation = config.translateX !== undefined || config.translateY !== undefined;
-      const delay = typeof config.delay === "function" ? config.delay(target, index) : config.delay || 0;
-      target.style.willChange = "transform";
-      return {
-        target,
-        startAt: startAt + delay,
-        transform: (progress) => {
-          const x = translateX[0] + (translateX[1] - translateX[0]) * progress;
-          const y = translateY[0] + (translateY[1] - translateY[0]) * progress;
-          const rotation = rotate[0] + (rotate[1] - rotate[0]) * progress;
-          return hasTranslation
-            ? `translate3d(${x}px,${y}px,0) rotate(${rotation}deg)`
-            : `rotate(${rotation}deg)`;
-        }
-      };
-    })
-  };
-  animationGroups.push(group);
-  if (!animationFrame) animationFrame = requestAnimationFrame(renderAnimations);
-};
+const { animate, stagger } = window.NVNCMotion;
 const runIntro = () => {
   if (introStarted) return;
   introStarted = true;
@@ -88,13 +21,17 @@ const finishStartup = () => {
     document.body.classList.add("is-ready");
     if (!startupLoader) return;
     startupLoader.classList.add("is-exiting");
-    startupLoader.addEventListener("animationend", (event) => {
-      if (event.target === startupLoader && event.animationName === "startup-exit") {
-        startupLoader.remove();
-      }
-    }, { once: true });
+    if (reduceMotion) {
+      startupLoader.remove();
+      return;
+    }
+    animate(startupLoader, { y: ['0%', '-101%'], duration: 520, ease: 'inOut(4)', onComplete: () => startupLoader.remove() });
   }, remaining);
 };
+if (startupLoader && !reduceMotion) {
+  const wipe = startupLoader.querySelector('.startup-loader__wipe');
+  if (wipe) animate(wipe, { x: ['-101%', '101%'], duration: 460, delay: 120, ease: 'inOut(4)' });
+}
 if (reduceMotion) {
   finishStartup();
 } else if (document.readyState === "complete") {
@@ -117,97 +54,24 @@ let lang = (() => { try { const saved = localStorage.getItem("nvnc-language"); i
 const setLanguage = () => { document.documentElement.lang = lang === "zh" ? "zh-CN" : "en"; try { localStorage.setItem("nvnc-language", lang); } catch {} document.querySelectorAll("[data-i18n]").forEach((el) => { const value = copy[lang][el.dataset.i18n]; if (value !== undefined) el.innerHTML = value; }); };
 document.getElementById("langToggle").onclick = () => { lang = lang === "en" ? "zh" : "en"; setLanguage(); onLanguageChange(); };
 setLanguage();
-/* ---------- Motion engine ---------- */
-/* Everything enters by flying in from outside the viewport. No opacity fades anywhere. */
+/* ---------- Motion language ---------- */
+/* Short directional travel keeps the site lively without hiding or spinning text. */
 const animeReady = !reduceMotion;
-const CJK_PATTERN = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
-const CHAR_SPLIT_LIMIT = 260;
-const DIRECTIONS = ["left", "right", "top", "bottom"];
 const randomBetween = (min, max) => min + Math.random() * (max - min);
-
-const makeCharSpan = (character, pieces) => {
-  const span = document.createElement("span");
-  span.className = "split-char fly-piece";
-  span.textContent = character;
-  pieces.push(span);
-  return span;
-};
-
-const splitPieces = (root) => {
-  if (!root) return [];
-  const existing = root.querySelectorAll(".fly-piece");
-  if (existing.length) return Array.from(existing);
-  const plain = (root.textContent || "").replace(/\s+/g, " ").trim();
-  if (!plain) return [];
-  const perCharacter = plain.length <= CHAR_SPLIT_LIMIT;
-  const pieces = [];
-  const walk = (node) => {
-    Array.from(node.childNodes).forEach((child) => {
-      if (child.nodeType === 3) {
-        const value = child.nodeValue;
-        if (!value || !value.trim()) return;
-        const fragment = document.createDocumentFragment();
-        value.split(/(\s+)/).forEach((token) => {
-          if (!token) return;
-          if (!token.trim()) {
-            fragment.appendChild(document.createTextNode(token));
-            return;
-          }
-          if (perCharacter && CJK_PATTERN.test(token)) {
-            Array.from(token).forEach((character) => fragment.appendChild(makeCharSpan(character, pieces)));
-            return;
-          }
-          const word = document.createElement("span");
-          word.className = "split-word";
-          if (perCharacter) {
-            Array.from(token).forEach((character) => word.appendChild(makeCharSpan(character, pieces)));
-          } else {
-            word.classList.add("fly-piece");
-            word.textContent = token;
-            pieces.push(word);
-          }
-          fragment.appendChild(word);
-        });
-        node.replaceChild(fragment, child);
-      } else if (child.nodeType === 1) {
-        if (child.tagName === "BR" || child.tagName === "IMG" || child.tagName === "INPUT") return;
-        if (child.classList.contains("split-word") || child.classList.contains("split-char")) return;
-        walk(child);
-      }
-    });
-  };
-  walk(root);
-  return pieces;
-};
-
-const offscreenFrom = (element, direction, pad) => {
-  const rect = element.getBoundingClientRect();
-  if (direction === "left") return { x: -(rect.right + pad), y: 0 };
-  if (direction === "right") return { x: window.innerWidth - rect.left + pad, y: 0 };
-  if (direction === "top") return { x: 0, y: -(rect.bottom + pad) };
-  return { x: 0, y: window.innerHeight - rect.top + pad };
-};
 
 const prepareFly = (nodes, config) => {
   const items = Array.from(nodes || []).filter(Boolean);
   if (!animeReady || !items.length) return null;
-  const pad = config.pad === undefined ? 90 : config.pad;
+  const distance = items.length > 1 ? 12 : 24;
   const states = items.map((node, index) => {
     const direction = typeof config.dir === "function" ? config.dir(node, index) : config.dir || "left";
-    const base = offscreenFrom(node, direction, pad);
-    const horizontal = direction === "left" || direction === "right";
-    const jitterX = config.jitterX || 0;
-    const jitterY = config.jitterY || 0;
-    /* Along the travel axis the jitter only pushes further out, so nothing ever starts on screen. */
-    const outward = (value, amount) => value + (value < 0 ? -1 : 1) * Math.random() * amount;
     return {
-      x: horizontal ? outward(base.x, jitterX) : randomBetween(-jitterX, jitterX),
-      y: horizontal ? randomBetween(-jitterY, jitterY) : outward(base.y, jitterY),
-      rotate: config.spin ? randomBetween(-config.spin, config.spin) : 0
+      x: direction === 'left' ? -distance : direction === 'right' ? distance : 0,
+      y: direction === 'top' ? -distance : direction === 'bottom' ? distance : 0,
     };
   });
   items.forEach((node, index) => {
-    node.style.transform = `translate3d(${states[index].x}px,${states[index].y}px,0) rotate(${states[index].rotate}deg)`;
+    node.style.transform = `translate3d(${states[index].x}px,${states[index].y}px,0)`;
   });
   return { items, states };
 };
@@ -217,11 +81,10 @@ const playFly = (prepared, config) => {
   const items = prepared.items;
   const states = prepared.states;
   animate(items, {
-    translateX: (target, index) => [states[index].x, 0],
-    translateY: (target, index) => [states[index].y, 0],
-    rotate: (target, index) => [states[index].rotate, 0],
-    duration: config.duration === undefined ? 950 : config.duration,
-    delay: stagger(config.stagger === undefined ? 14 : config.stagger, { start: config.delay || 0 }),
+    x: (target, index) => [states[index].x, 0],
+    y: (target, index) => [states[index].y, 0],
+    duration: Math.min(config.duration ?? 520, 650),
+    delay: stagger(Math.min(config.stagger ?? 14, 28), { start: Math.min(config.delay || 0, 240) }),
     ease: config.ease || "out(4)",
     onComplete: () => items.forEach((node) => {
       node.style.transform = "";
@@ -231,11 +94,7 @@ const playFly = (prepared, config) => {
 };
 
 const flyIn = (nodes, config) => playFly(prepareFly(nodes, config || {}), config || {});
-const flyText = (selector, config) => {
-  const pieces = [];
-  document.querySelectorAll(selector).forEach((element) => pieces.push.apply(pieces, splitPieces(element)));
-  flyIn(pieces, config);
-};
+const flyText = (selector, config) => flyIn(document.querySelectorAll(selector), config);
 
 /* ---------- Ink particle field ---------- */
 const field = document.getElementById("particleField");
@@ -467,58 +326,48 @@ if (field && fieldContext) {
 /* ---------- Opening sequence ---------- */
 onIntro(() => {
   if (!animeReady) return;
-  flyIn([document.querySelector(".site-header")], { dir: "top", pad: 40, duration: 820, ease: "out(3)" });
+  flyIn([document.querySelector(".site-header")], { dir: "top", duration: 440 });
   flyIn(document.querySelectorAll(".brand, .site-header nav a, .header-actions > *"), {
-    dir: "top", pad: 40, duration: 760, stagger: 55, delay: 210
+    dir: "top", duration: 380, stagger: 28, delay: 70
   });
-  flyText(".hero-copy .eyebrow", {
-    dir: "left", duration: 820, stagger: 9, delay: 260, jitterY: 130, spin: 90
-  });
-  flyText(".hero-copy h1", {
-    dir: () => DIRECTIONS[Math.floor(Math.random() * DIRECTIONS.length)],
-    duration: 1000, stagger: 18, delay: 320, jitterX: 220, jitterY: 220, spin: 220, ease: "out(3)"
-  });
-  flyText(".hero-copy .lede", {
-    dir: "left", duration: 880, stagger: 6, delay: 520, jitterY: 110, spin: 80
-  });
+  flyText(".hero-copy .eyebrow", { dir: "left", duration: 400, delay: 60 });
+  flyText(".hero-copy h1", { dir: "left", duration: 560, delay: 110 });
+  flyText(".hero-copy .lede", { dir: "left", duration: 460, delay: 155 });
   flyIn(document.querySelectorAll(".hero-actions > *"), {
-    dir: "left", duration: 900, stagger: 90, delay: 720
+    dir: "left", duration: 440, stagger: 45, delay: 195
   });
   flyIn([document.querySelector(".hero-mark")], {
-    dir: "right", pad: 140, duration: 1250, delay: 180, ease: "out(3)"
+    dir: "right", duration: 600, delay: 120
   });
   const globe = document.querySelector(".globe-object");
   if (globe) {
-    globe.style.transform = "rotate(-540deg)";
-    animate([globe], { rotate: [-540, 0], duration: 1700, delay: 180, ease: "out(4)" });
+    animate(globe, { rotate: [-35, 0], duration: 720, delay: 100, ease: "out(4)" });
   }
 
   const revealPlan = [
-    { selector: ".ticker", mode: "block", dir: () => "left", config: { duration: 950, ease: "out(3)" } },
-    { selector: ".overview-block", mode: "text", dir: (index) => (index % 2 ? "right" : "left"), config: { duration: 840, stagger: 6, jitterY: 100, spin: 100 } },
-    { selector: ".section-heading", mode: "text", dir: () => "left", config: { duration: 920, stagger: 13, jitterY: 150, spin: 150 } },
-    { selector: ".club-content > .body-large", mode: "text", dir: () => "right", config: { duration: 840, stagger: 6, jitterY: 90, spin: 90 } },
-    { selector: ".feature-grid article", mode: "text", dir: (index) => (index === 1 ? "right" : "left"), config: { duration: 820, stagger: 6, jitterY: 80, spin: 80 } },
-    { selector: ".rhythm-intro", mode: "text", dir: () => "left", config: { duration: 900, stagger: 11, jitterY: 130, spin: 130 } },
-    { selector: ".rhythm-card", mode: "block", dir: () => "right", config: { duration: 980, ease: "out(3)" } },
-    { selector: ".competition-top > div:first-child", mode: "text", dir: () => "left", config: { duration: 920, stagger: 13, jitterY: 150, spin: 150 } },
-    { selector: ".status-badge", mode: "block", dir: () => "right", config: { duration: 860 } },
-    { selector: ".comp-description", mode: "text", dir: () => "left", config: { duration: 840, stagger: 5, jitterY: 90, spin: 75 } },
-    { selector: ".prize-note", mode: "block", dir: () => "right", config: { duration: 900, ease: "out(3)" } },
-    { selector: ".rules-list div", mode: "block", dir: (index) => (index % 2 ? "right" : "left"), config: { duration: 880 } },
-    { selector: ".contact-section > div:first-child", mode: "text", dir: () => "left", config: { duration: 920, stagger: 13, jitterY: 150, spin: 150 } },
-    { selector: ".contact-display > p", mode: "text", dir: () => "right", config: { duration: 840, stagger: 6, jitterY: 90, spin: 90 } },
-    { selector: ".wechat-display", mode: "block", dir: () => "right", config: { duration: 920 } }
+    { selector: ".ticker", mode: "block", dir: () => "left", config: { duration: 420 } },
+    { selector: ".overview-block", mode: "text", dir: (index) => (index % 2 ? "right" : "left"), config: { duration: 440 } },
+    { selector: ".section-heading", mode: "text", dir: () => "left", config: { duration: 500 } },
+    { selector: ".club-content > .body-large", mode: "text", dir: () => "right", config: { duration: 440 } },
+    { selector: ".feature-grid article", mode: "text", dir: (index) => (index === 1 ? "right" : "left"), config: { duration: 420 } },
+    { selector: ".rhythm-intro", mode: "text", dir: () => "left", config: { duration: 480 } },
+    { selector: ".rhythm-card", mode: "block", dir: () => "right", config: { duration: 460 } },
+    { selector: ".competition-top > div:first-child", mode: "text", dir: () => "left", config: { duration: 480 } },
+    { selector: ".status-badge", mode: "block", dir: () => "right", config: { duration: 380 } },
+    { selector: ".comp-description", mode: "text", dir: () => "left", config: { duration: 440 } },
+    { selector: ".prize-note", mode: "block", dir: () => "right", config: { duration: 420 } },
+    { selector: ".rules-list div", mode: "block", dir: (index) => (index % 2 ? "right" : "left"), config: { duration: 420 } },
+    { selector: ".contact-section > div:first-child", mode: "text", dir: () => "left", config: { duration: 480 } },
+    { selector: ".contact-display > p", mode: "text", dir: () => "right", config: { duration: 420 } },
+    { selector: ".wechat-display", mode: "block", dir: () => "right", config: { duration: 440 } }
   ];
 
   const units = [];
   const prepareUnit = (unit) => {
-    const nodes = unit.mode === "text" ? splitPieces(unit.element) : [unit.element];
-    unit.prepared = prepareFly(nodes, unit.config);
+    unit.prepared = prepareFly([unit.element], unit.config);
   };
 
-  /* Elements are parked outside the viewport, so an IntersectionObserver on them would
-     never fire. Vertical position is untouched by the horizontal park, so trigger on that. */
+  /* Trigger on the original layout position so translated text cannot miss its reveal. */
   let checkQueued = false;
   const checkReveals = () => {
     checkQueued = false;
@@ -564,6 +413,19 @@ onIntro(() => {
       prepareUnit(unit);
     });
   };
+});
+onIntro(() => {
+  const track = document.querySelector('.ticker-track');
+  if (!track || reduceMotion) return;
+  const tickerMotion = animate(track, { x: ['0%', '-50%'], duration: 28000, loop: true, ease: 'linear' });
+  const pauseTicker = () => tickerMotion.pause();
+  const resumeTicker = () => { if (document.visibilityState === 'visible') tickerMotion.play(); };
+  track.closest('.ticker')?.addEventListener('pointerenter', pauseTicker);
+  track.closest('.ticker')?.addEventListener('pointerleave', resumeTicker);
+  track.closest('.ticker')?.addEventListener('focusin', pauseTicker);
+  track.closest('.ticker')?.addEventListener('focusout', resumeTicker);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' ? resumeTicker() : pauseTicker());
+  window.addEventListener('pagehide', () => tickerMotion.cancel(), { once: true });
 });
 const mobileTilt = window.matchMedia("(max-width: 800px), (pointer: coarse)").matches;
 const heroTilt = document.querySelector(".hero-tilt");
@@ -663,15 +525,35 @@ terms.onchange = () => {
     }
   }, 1000);
 };
-signupForm.onsubmit = async (event) => { event.preventDefault(); const data = Object.fromEntries(new FormData(signupForm)); data.termsAccepted = terms.checked; try { await post("/api/auth/signup", data); document.getElementById("signupMessage").textContent = lang === "zh" ? "报名成功！请从右上角登录。" : "Signup received — sign in from the top right."; signupForm.reset(); terms.checked = false; termsStatus.textContent = copy[lang].termsRequired; termsStatus.classList.remove("accepted"); submitButton.disabled = true; if (requestedReturnTo) { signupDialog.close(); dialog.showModal(); document.getElementById("loginMessage").textContent = lang === "zh" ? "账号已创建，请登录以继续。" : "Account created — sign in to continue."; } } catch (error) { document.getElementById("signupMessage").textContent = error.message; } };
+signupForm.onsubmit = async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(signupForm));
+  data.termsAccepted = terms.checked;
+  try {
+    await post("/api/auth/signup", data);
+    document.getElementById("signupMessage").textContent = lang === "zh" ? "报名成功！请从右上角登录。" : "Signup received — sign in from the top right.";
+    signupForm.reset();
+    terms.checked = false;
+    termsStatus.textContent = copy[lang].termsRequired;
+    termsStatus.classList.remove("accepted");
+    submitButton.disabled = true;
+    if (requestedReturnTo) {
+      await window.NVNCMotion.closeDialog(signupDialog);
+      window.NVNCMotion.openDialog(dialog);
+      document.getElementById("loginMessage").textContent = lang === "zh" ? "账号已创建，请登录以继续。" : "Account created — sign in to continue.";
+    }
+  } catch (error) {
+    document.getElementById("signupMessage").textContent = error.message;
+  }
+};
 const contactForm = document.getElementById("contactForm");
 if (contactForm) contactForm.onsubmit = async (event) => { event.preventDefault(); try { await post("/api/contact", Object.fromEntries(new FormData(event.target))); document.getElementById("contactMessage").textContent = lang === "zh" ? "消息已发送。" : "Message sent."; event.target.reset(); } catch (error) { document.getElementById("contactMessage").textContent = error.message; } };
 const signupDialog = document.getElementById("signupDialog");
 const termsDialog = document.getElementById("termsDialog");
 const wechatDialog = document.getElementById("wechatDialog");
-const openSignup = () => { if (!signupDialog.open) signupDialog.showModal(); document.body.classList.add("signup-dialog-open"); };
-const openWeChat = () => { if (!wechatDialog.open) wechatDialog.showModal(); };
-const openTerms = () => { if (!termsDialog.open) termsDialog.showModal(); };
+const openSignup = () => { window.NVNCMotion.openDialog(signupDialog); document.body.classList.add("signup-dialog-open"); };
+const openWeChat = () => window.NVNCMotion.openDialog(wechatDialog);
+const openTerms = () => window.NVNCMotion.openDialog(termsDialog);
 document.getElementById("createAccountButton").onclick = openSignup;
 const heroCreateAccountButton = document.getElementById("heroCreateAccountButton");
 if (heroCreateAccountButton) heroCreateAccountButton.onclick = openSignup;
@@ -679,18 +561,18 @@ const joinAccountButton = document.getElementById("joinAccountButton");
 if (joinAccountButton) joinAccountButton.onclick = openSignup;
 document.getElementById("mobileJoinButton").onclick = openSignup;
 document.getElementById("joinWeChatButton").onclick = openWeChat;
-document.getElementById("wechatClose").onclick = () => wechatDialog.close();
-document.getElementById("openSignupFromAccount").onclick = () => { dialog.close(); openSignup(); };
+document.getElementById("wechatClose").onclick = () => window.NVNCMotion.closeDialog(wechatDialog);
+document.getElementById("openSignupFromAccount").onclick = async () => { await window.NVNCMotion.closeDialog(dialog); openSignup(); };
 signupForm.querySelector('[value="member"]').addEventListener("change", openTerms);
 document.getElementById("reviewTerms").onclick = openTerms;
 continueButton.onclick = () => {
   termsStatus.textContent = copy[lang].termsAcceptedStatus;
   termsStatus.classList.add("accepted");
   submitButton.disabled = false;
-  termsDialog.close();
+  window.NVNCMotion.closeDialog(termsDialog);
 };
-document.getElementById("signupClose").onclick = () => signupDialog.close();
-document.getElementById("termsClose").onclick = () => termsDialog.close();
+document.getElementById("signupClose").onclick = () => window.NVNCMotion.closeDialog(signupDialog);
+document.getElementById("termsClose").onclick = () => window.NVNCMotion.closeDialog(termsDialog);
 signupDialog.addEventListener("close", () => document.body.classList.remove("signup-dialog-open"));
 termsDialog.addEventListener("close", () => {
   if (!submitButton.disabled) return;
@@ -699,8 +581,12 @@ termsDialog.addEventListener("close", () => {
   continueButton.disabled = true;
   continueButton.textContent = copy[lang].continue;
 });
-const dialog = document.getElementById("accountDialog"); document.getElementById("accountButton").onclick = () => dialog.showModal();
-document.getElementById("accountClose").onclick = () => dialog.close();
+const dialog = document.getElementById("accountDialog"); document.getElementById("accountButton").onclick = () => window.NVNCMotion.openDialog(dialog);
+document.getElementById("accountClose").onclick = () => window.NVNCMotion.closeDialog(dialog);
+[signupDialog,termsDialog,wechatDialog,dialog].forEach((modal) => modal.addEventListener('cancel',(event) => {
+  event.preventDefault();
+  window.NVNCMotion.closeDialog(modal);
+}));
 const accountContent = document.getElementById("accountContent");
 const accountButton = document.getElementById("accountButton");
 const publicView = new URLSearchParams(location.search).get("public") === "1";
@@ -769,7 +655,7 @@ loginForm.onsubmit = async (event) => {
 const restoreAccount = () => requestJson("/api/me").then(({ user }) => {
   if (!user) {
     if (accountIntent === "signup") openSignup();
-    else if (accountIntent === "login") dialog.showModal();
+    else if (accountIntent === "login") window.NVNCMotion.openDialog(dialog);
     return;
   }
   if (publicView) {

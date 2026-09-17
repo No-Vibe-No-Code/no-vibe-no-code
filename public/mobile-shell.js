@@ -8,13 +8,17 @@
   trigger.className = 'mobile-menu-trigger';
   trigger.setAttribute('aria-label', 'Open menu');
   trigger.setAttribute('aria-haspopup', 'dialog');
-  trigger.innerHTML = '<span aria-hidden="true">☰</span><span>Menu</span>';
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-controls', 'mobileSiteMenu');
+  trigger.innerHTML = '<span class="mobile-menu-glyph" aria-hidden="true"><i></i><i></i><i></i></span><span>Menu</span>';
   header.append(trigger);
 
   const drawer = document.createElement('dialog');
+  drawer.id = 'mobileSiteMenu';
   drawer.className = 'mobile-menu-drawer';
+  drawer.dataset.motionDirection = 'left';
   drawer.setAttribute('aria-label', 'Site menu');
-  drawer.innerHTML = '<div class="mobile-menu-panel"><div class="mobile-menu-head"><strong>No Vibe No Code</strong><button type="button" class="mobile-menu-close" aria-label="Close menu">×</button></div><nav aria-label="Mobile navigation"></nav></div>';
+  drawer.innerHTML = '<div class="mobile-menu-panel"><div class="mobile-menu-head"><strong>No Vibe No Code</strong></div><nav aria-label="Mobile navigation"></nav></div>';
   document.body.append(drawer);
   const nav = drawer.querySelector('nav');
   const publicLinks = '<a href="/?public=1">Public site</a><a href="/?public=1#club">About the club</a><a href="/?public=1#join">Join</a><a href="/gallery">Gallery</a><a href="/members">Members</a><a href="/?public=1#contact">Contact</a><a href="/?account=login">Sign in</a>';
@@ -32,19 +36,25 @@
       if (active) nav.querySelector(`a[href="${active}"]`)?.setAttribute('aria-current', 'page');
     }
   }
+  const closeDrawer = () => window.NVNCMotion.closeDialog(drawer);
   trigger.addEventListener('click', async () => {
     await fill();
-    drawer.showModal();
+    window.NVNCMotion.openDialog(drawer);
     document.body.classList.add('mobile-menu-open');
-    drawer.querySelector('.mobile-menu-close').focus();
+    trigger.setAttribute('aria-expanded', 'true');
+    nav.querySelector('a,button')?.focus();
   });
   drawer.addEventListener('close', () => {
     document.body.classList.remove('mobile-menu-open');
+    trigger.setAttribute('aria-expanded', 'false');
     trigger.focus({ preventScroll: true });
   });
-  drawer.querySelector('.mobile-menu-close').addEventListener('click', () => drawer.close());
+  drawer.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeDrawer();
+  });
   drawer.addEventListener('click', event => {
-    if (event.target === drawer) drawer.close();
+    if (event.target === drawer) closeDrawer();
     if (event.target.closest('a')) drawer.close();
     if (event.target.matches('[data-mobile-signout]')) {
       drawer.close();

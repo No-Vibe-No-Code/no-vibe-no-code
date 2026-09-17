@@ -54,7 +54,7 @@ These are the original supplied PNGs, without cropping or recompression.
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Semantic HTML, modern CSS, vanilla JavaScript |
+| Frontend | Semantic HTML, modern CSS, vanilla JavaScript, Anime.js motion |
 | Runtime and static assets | Cloudflare Workers |
 | Database | Cloudflare D1 |
 | Profile photos, project covers, and team avatars | Cloudflare R2 |
@@ -70,6 +70,12 @@ delivery. A one-minute Worker cron trigger processes scheduled sends.
 `src/github.ts` imports and sanitizes public GitHub README content. Static
 pages and browser scripts live in `public/`; schema changes live in
 `migrations/`.
+
+`public/product-motion.js` is the shared Anime.js runtime for directional
+entrances, dialogs, and mobile drawers. The landing page and NFC-card vote use
+the same runtime. Motion uses transforms rather than opacity fades, and
+`prefers-reduced-motion` makes interactions immediate. `npm run build:assets`
+bundles the runtime into the existing static scripts; no CDN is required.
 
 ## Workspace routes and permissions
 
