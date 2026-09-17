@@ -7,6 +7,13 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const staffRoles = ["maintainer", "club-leader", "teacher"];
 const leaderRoles = ["club-leader", "teacher"];
+function formAccessError(access: string, user: any): Response | null {
+  if (access === 'public') return null;
+  if (!user) return json({error:'Please sign in.'},{status:401});
+  if (access === 'staff' && !staffRoles.includes(user.role)) return json({error:'This form is for club staff.'},{status:403});
+  if (access === 'members' && user.role === 'non-member') return json({error:'This form is for club members.'},{status:403});
+  return null;
+}
 const slugify = (value: unknown) => String(value || "").toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
 const parsed = (value: unknown, fallback: unknown) => {
   try { return JSON.parse(String(value)); } catch { return fallback; }
@@ -176,6 +183,7 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   if (path === "/api/me" && request.method === "GET") {
     return json({ user: user ? {
       ...user,
+      password_hash: undefined,
       skills: parsed(user.skills_json, []),
       links: parsed(user.links_json, []),
       privacy: parsed(user.privacy_json, {}),
@@ -357,9 +365,38 @@ export async function workspaceApi(request: Request, env: Env): Promise<Response
   if(publish&&request.method==="POST"){if(!user||!leaderRoles.includes(user.role))return json({error:"Not authorized."},{status:403});const revision=await env.DB.prepare("SELECT id FROM form_revisions WHERE form_id=? ORDER BY revision_number DESC LIMIT 1").bind(publish[1]).first<any>();if(!revision)return json({error:"Form not found."},{status:404});const timestamp=now();await env.DB.batch([env.DB.prepare("UPDATE form_revisions SET published_at=? WHERE id=?").bind(timestamp,revision.id),env.DB.prepare("UPDATE forms SET status='published',published_revision_id=?,updated_at=? WHERE id=?").bind(revision.id,timestamp,publish[1])]);return json({ok:true});}
 
   const publicForm=path.match(/^\/api\/forms\/([^/]+)$/);
-  if(publicForm&&request.method==="GET"){const form=await env.DB.prepare("SELECT f.*,r.schema_json,r.revision_number FROM forms f JOIN form_revisions r ON r.id=f.published_revision_id WHERE (f.id=? OR f.slug=?) AND f.status='published' AND (f.opens_at IS NULL OR f.opens_at<=?) AND (f.closes_at IS NULL OR f.closes_at>?)").bind(publicForm[1],publicForm[1],now(),now()).first<any>();if(!form)return json({error:"Form not found or closed."},{status:404});if(form.access!=="public"&&!user)return json({error:"Please sign in."},{status:401});return json({form:{id:form.id,slug:form.slug,title:form.title,description:form.description,access:form.access,revision:form.revision_number,schema:parsed(form.schema_json,{sections:[]})}});}
+  if(publicForm&&request.method==="GET"){
+    const time=now();
+    const form=await env.DB.prepare("SELECT f.*,r.schema_json,r.revision_number FROM forms f JOIN form_revisions r ON r.id=f.published_revision_id WHERE (f.id=? OR f.slug=?) AND f.status='published' AND (f.opens_at IS NULL OR f.opens_at<=?) AND (f.closes_at IS NULL OR f.closes_at>?)").bind(publicForm[1],publicForm[1],time,time).first<any>();
+    if(!form)return json({error:'Form not found or closed.'},{status:404});
+    const accessError=formAccessError(form.access,user);if(accessError)return accessError;
+    return json({form:{id:form.id,slug:form.slug,title:form.title,description:form.description,access:form.access,revision:form.revision_number,schema:parsed(form.schema_json,{sections:[]})}});
+  }
   const response=path.match(/^\/api\/forms\/([^/]+)\/responses$/);
-  if(response&&request.method==="POST"){const form=await env.DB.prepare("SELECT f.id,f.access,f.published_revision_id,r.schema_json FROM forms f JOIN form_revisions r ON r.id=f.published_revision_id WHERE (f.id=? OR f.slug=?) AND f.status='published'").bind(response[1],response[1]).first<any>();if(!form)return json({error:"Form not found or closed."},{status:404});if(form.access!=="public"&&!user)return json({error:"Please sign in."},{status:401});const answers=body.answers&&typeof body.answers==="object"?body.answers:{};const fields=(parsed(form.schema_json,{sections:[]})as any).sections.flatMap((section:any)=>section.fields||[]);for(const field of fields){const value=answers[field.id];if(field.required&&(value===undefined||value===null||value===""||(Array.isArray(value)&&!value.length)))return json({error:`${field.label||"A required question"} needs an answer.`},{status:400});}const responseId=id(),timestamp=now();const statements=[env.DB.prepare("INSERT INTO form_responses (id,form_id,revision_id,respondent_user_id,status,submitted_at,created_at,updated_at) VALUES (?,?,?,?,'submitted',?,?,?)").bind(responseId,form.id,form.published_revision_id,user?.id||null,timestamp,timestamp,timestamp)];Object.entries(answers).slice(0,200).forEach(([fieldId,value])=>statements.push(env.DB.prepare("INSERT INTO form_answers (id,response_id,field_id,value_json,created_at) VALUES (?,?,?,?,?)").bind(id(),responseId,fieldId.slice(0,100),JSON.stringify(value),timestamp)));await env.DB.batch(statements);return json({ok:true,responseId},{status:201});}
+  if(response&&request.method==="POST"){
+    const timestamp=now();
+    const form=await env.DB.prepare("SELECT f.id,f.access,f.published_revision_id,r.schema_json FROM forms f JOIN form_revisions r ON r.id=f.published_revision_id WHERE (f.id=? OR f.slug=?) AND f.status='published' AND (f.opens_at IS NULL OR f.opens_at<=?) AND (f.closes_at IS NULL OR f.closes_at>?)").bind(response[1],response[1],timestamp,timestamp).first<any>();
+    if(!form)return json({error:'Form not found or closed.'},{status:404});
+    const accessError=formAccessError(form.access,user);if(accessError)return accessError;
+    const answers=body.answers&&typeof body.answers==='object'&&!Array.isArray(body.answers)?body.answers:{};
+    const fields=(parsed(form.schema_json,{sections:[]})as any).sections.flatMap((section:any)=>section.fields||[]);
+    const known=new Set(fields.map((field:any)=>field.id));
+    for(const [fieldId,value] of Object.entries(answers))if(!known.has(fieldId)||JSON.stringify(value).length>5000)return json({error:'An answer is invalid or too long.'},{status:400});
+    for(const field of fields){
+      const value=answers[field.id],missing=value===undefined||value===null||value===''||(Array.isArray(value)&&!value.length);
+      if(field.required&&missing)return json({error:`${field.label||'A required question'} needs an answer.`},{status:400});
+      if(missing)continue;
+      if(['single-choice','dropdown'].includes(field.type)&&!field.options?.includes(value))return json({error:`Choose a valid option for ${field.label}.`},{status:400});
+      if(field.type==='checkboxes'&&(!Array.isArray(value)||value.some((choice:any)=>!field.options?.includes(choice))))return json({error:`Choose valid options for ${field.label}.`},{status:400});
+      if(field.type==='number'&&!Number.isFinite(Number(value)))return json({error:`Enter a number for ${field.label}.`},{status:400});
+      if(field.type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value)))return json({error:`Enter an email for ${field.label}.`},{status:400});
+      if(field.type==='url'&&!isUrl(value))return json({error:`Enter a URL for ${field.label}.`},{status:400});
+      if(field.type==='consent'&&value!==true)return json({error:`Consent is required for ${field.label}.`},{status:400});
+    }
+    const responseId=id(),statements=[env.DB.prepare("INSERT INTO form_responses (id,form_id,revision_id,respondent_user_id,status,submitted_at,created_at,updated_at) VALUES (?,?,?,?,'submitted',?,?,?)").bind(responseId,form.id,form.published_revision_id,user?.id||null,timestamp,timestamp,timestamp)];
+    Object.entries(answers).forEach(([fieldId,value])=>statements.push(env.DB.prepare('INSERT INTO form_answers (id,response_id,field_id,value_json,created_at) VALUES (?,?,?,?,?)').bind(id(),responseId,fieldId,JSON.stringify(value),timestamp)));
+    await env.DB.batch(statements);return json({ok:true,responseId},{status:201});
+  }
 
   if(path==="/api/admin/broadcasts"&&request.method==="POST"){if(!user||!leaderRoles.includes(user.role))return json({error:"Not authorized."},{status:403});const title=String(body.title||"").trim().slice(0,150),message=String(body.body||"").trim().slice(0,5000);if(!title||!message||!isUrl(body.actionUrl))return json({error:"Broadcast title and message are required."},{status:400});const audienceType=body.audienceType==="role"?"role":"all",audienceValue=audienceType==="role"&&["non-member","member",...staffRoles].includes(body.audienceValue)?body.audienceValue:null;const recipients=audienceType==="role"?await env.DB.prepare("SELECT id FROM users WHERE status='active' AND role=? LIMIT 1000").bind(audienceValue).all<any>():await env.DB.prepare("SELECT id FROM users WHERE status='active' LIMIT 1000").all<any>();const broadcastId=id(),timestamp=now();const statements=[env.DB.prepare("INSERT INTO broadcasts (id,created_by_user_id,title,body,action_url,audience_type,audience_value,status,sent_at,created_at) VALUES (?,?,?,?,?,?,?,'sent',?,?)").bind(broadcastId,user.id,title,message,body.actionUrl||null,audienceType,audienceValue,timestamp,timestamp)];recipients.results.forEach((recipient:any)=>{const notificationId=id();statements.push(env.DB.prepare("INSERT INTO notifications (id,recipient_user_id,type,actor_user_id,title,body,action_url,related_type,related_id,created_at) VALUES (?,?,'broadcast',?,?,?,?, 'broadcast',?,?)").bind(notificationId,recipient.id,user.id,title,message,body.actionUrl||null,broadcastId,timestamp));statements.push(env.DB.prepare("INSERT INTO broadcast_deliveries (id,broadcast_id,recipient_user_id,notification_id,status,delivered_at,created_at) VALUES (?,?,?,?,'delivered',?,?)").bind(id(),broadcastId,recipient.id,notificationId,timestamp,timestamp));});for(let offset=0;offset<statements.length;offset+=100)await env.DB.batch(statements.slice(offset,offset+100));return json({ok:true,delivered:recipients.results.length},{status:201});}
 

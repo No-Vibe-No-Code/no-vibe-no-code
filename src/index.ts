@@ -1,4 +1,5 @@
 import { workspaceApi } from "./workspace";
+import { adminApi, processDueBroadcasts } from "./admin";
 
 export interface Env {
   ASSETS: Fetcher;
@@ -90,7 +91,7 @@ function withSecurityHeaders(response: Response, request: Request) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-async function currentUser(request: Request, env: Env) {
+export async function currentUser(request: Request, env: Env) {
   const sessionId = request.headers.get("Cookie")?.match(/nvnc_session=([^;]+)/)?.[1];
   if (!sessionId) return null;
   return env.DB.prepare(
@@ -104,7 +105,7 @@ function validProfile(body: any) {
   );
 }
 
-function sameOrigin(request: Request) {
+export function sameOrigin(request: Request) {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return true;
   const origin = request.headers.get("Origin");
   if (!origin) return true;
@@ -185,9 +186,13 @@ async function legacyApi(request: Request, env: Env) {
     if (!user || !["club-leader", "teacher"].includes(user.role)) return json({ error: "Only club leaders and teachers can reset passwords." }, { status: 403 });
     if (typeof body.password !== "string" || body.password.length < 8) return json({ error: "Password must be at least 8 characters." }, { status: 400 });
     const targetId = url.pathname.split("/").at(-2);
+    const target = await env.DB.prepare("SELECT id,is_initial_leader FROM users WHERE id=?").bind(targetId).first<{id:string;is_initial_leader:number}>();
+    if (!target) return json({ error: "Member not found." }, { status: 404 });
+    if (target.is_initial_leader && targetId !== user.id) return json({ error: "Only the initial leader can reset their own password." }, { status: 403 });
     const timestamp = now();
     await env.DB.batch([
       env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(body.password), timestamp, targetId),
+      env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetId),
       env.DB.prepare("INSERT INTO admin_audit_log (id,actor_user_id,action,target_type,target_id,created_at) VALUES (?,?,'user.password-reset','user',?,?)").bind(id(), user.id, targetId, timestamp),
     ]);
     return json({ ok: true });
@@ -278,6 +283,8 @@ export default {
         return withSecurityHeaders(Response.redirect("https://www.youtube.com/watch?v=dQw4w9WgXcQ", 302), request);
       }
       if (url.pathname.startsWith("/api/")) {
+        const adminResponse = await adminApi(request, env);
+        if (adminResponse) return withSecurityHeaders(adminResponse, request);
         const workspaceResponse = await workspaceApi(request, env);
         return withSecurityHeaders(workspaceResponse || await legacyApi(request, env), request);
       }
@@ -294,6 +301,11 @@ export default {
         workspaceUrl.search = url.search;
         return withSecurityHeaders(await env.ASSETS.fetch(new Request(workspaceUrl, request)), request);
       }
+      if (/^\/admin\/(?:members|forms|projects|teams|broadcasts|contacts|settings)(?:\/[^/]+)?\/?$/.test(url.pathname)) {
+        const adminUrl = new URL('/admin', request.url);
+        adminUrl.search = url.search;
+        return withSecurityHeaders(await env.ASSETS.fetch(new Request(adminUrl, request)), request);
+      }
       if (url.pathname.startsWith("/nfc/") && url.pathname.length > 5) {
         const nfcUrl = new URL("/nfc", request.url);
         nfcUrl.searchParams.set("token", url.pathname.slice(5));
@@ -305,5 +317,8 @@ export default {
       console.error(error);
       return withSecurityHeaders(json({ error: "Something went wrong. Please try again." }, { status: 500 }), request);
     }
+  },
+  async scheduled(_controller: ScheduledController, env: Env) {
+    await processDueBroadcasts(env);
   },
 };

@@ -2,7 +2,8 @@
 
 A bilingual website and member portal for a student-led AI maker club. Members
 can create public profiles, share projects, join teams, and claim NFC profile
-cards. Club leaders manage accounts, forms, projects, and card issuance.
+cards. Staff use a dedicated administration workspace for members, forms,
+project review, teams, broadcasts, contact messages, and NFC cards.
 
 [Visit the live site](https://novibenocode.ccwu.cc)
 
@@ -64,6 +65,8 @@ The Worker in `src/index.ts` handles API routing and friendly site routes.
 `src/workspace.ts` implements profile, staff-review, vote-result, and NFC APIs.
 `src/member-workspace.ts` implements projects, teams, notifications, and
 account preferences. The client is still static JavaScript, not a new framework.
+`src/admin.ts` implements the staff workspace and resumable in-app broadcast
+delivery. A one-minute Worker cron trigger processes scheduled sends.
 `src/github.ts` imports and sanitizes public GitHub README content. Static
 pages and browser scripts live in `public/`; schema changes live in
 `migrations/`.
@@ -133,6 +136,52 @@ website, saved notifications, and account preferences. It retains existing
 records, team associations, and archive fields. Apply it before deploying the
 new Worker. Issues, boards, comments, dark mode, and email/push are not included.
 
+## Administration workspace
+
+Staff pages live at `/admin`, `/admin/members`, `/admin/forms`,
+`/admin/projects`, `/admin/teams`, `/admin/broadcasts`, `/admin/contacts`, and
+`/admin/settings`. Records have detail routes; tabs and filters are shareable
+query parameters. Old `/admin#…` and `/admin.html#…` links redirect to the new
+pages. Signed-out visitors return to their requested page after signing in;
+signed-in non-staff members see an access-denied page. The desktop sidebar
+becomes an accessible mobile menu.
+
+- **Overview** shows database counts, pending reviews, new contacts, scheduled
+  broadcasts, and recent staff actions.
+- **Members** supports paginated name/class search, role and status filters,
+  member details, staff notes, history, and confirmed account actions.
+- **Forms** supports multi-section questions, saved revisions, preview of any
+  revision (with the live one marked), opening/closing windows, publication,
+  response review and notes, and complete CSV export. Audience and time rules
+  are checked again when a response is submitted.
+- **Projects and Teams** provide staff review and management with recorded
+  decisions and owner notifications. Maintainers can review projects and
+  inspect teams; leaders and teachers can override team details and membership.
+- **Broadcasts** are in-app only. Staff can preview recipients and message,
+  save a draft, schedule or send, inspect delivery counts, cancel before a send
+  starts, and retry failed deliveries. Recipients are fixed when sending begins;
+  unique per-recipient records prevent duplicate notifications on cron retries.
+- **Contacts** has New/In progress/Resolved triage, assignment, private notes,
+  and action history. **Settings** contains competition control, NFC inventory,
+  and the audit log. NFC token URLs appear only in the one-time issuance CSV;
+  inventory never returns them.
+
+The Worker enforces role boundaries. Maintainers can review projects and triage
+contacts. Leaders and teachers additionally manage forms, broadcasts, member
+status, teams, and NFC cards. Only the initial leader changes global roles and
+competition status. Existing `/api/admin/users` actions remain available.
+
+Admin collections use `GET /api/admin/{members,forms,projects,teams,broadcasts,
+contacts,nfc-cards,audit}` with `page`, `limit`, and section-specific filters;
+responses contain `items`, `total`, `page`, `limit`, and `hasMore`. The overview
+uses `/api/admin/dashboard`. Broadcasts use `/api/admin/broadcasts/drafts`,
+`/:id/schedule|send|cancel|retry`, and `/:id/deliveries`. Form revisions and
+responses have detail endpoints under `/api/admin/forms/:id`.
+
+`migrations/0010_admin_workspace.sql` adds contact assignment, response review,
+and draft/scheduled delivery metadata without removing existing data. Apply it
+before deploying this Worker. Times are stored in UTC and displayed locally.
+
 ## NFC and vote APIs
 
 | Route | Purpose |
@@ -173,16 +222,20 @@ Run local-only integration tests against an isolated D1/R2 state directory:
 npm run test:workspace
 # Keep the fixture server available at localhost:8791 for browser tests:
 npm run test:workspace -- --serve
+npm run test:admin
+# Keep the isolated admin fixture at localhost:8793 for browser tests:
+npm run test:admin -- --serve
 ```
 
 The test runner refuses to use a remote database: all Wrangler storage commands
 are explicitly local, and API tests target localhost. It creates owner, admin,
 member, outsider, and staff fixtures with synthetic data. Browser credentials
-are defined in `tests/workspace.mjs`; they do not exist on production.
-Use a free port 8791. Temporary state is retained in the printed OS temp path
+are defined in `tests/workspace.mjs` and `tests/admin.mjs`; they do not exist on
+production. Use free ports 8791 and 8793. Temporary state is retained in the printed OS temp path
 for inspection; stop the fixture server with Ctrl+C.
 
 See [workspace validation](docs/workspace-validation.md) for the release checks.
+See [admin validation](docs/admin-validation.md) for staff-workspace checks.
 
 For a new Cloudflare account, create the D1 database and R2 bucket named in
 `wrangler.toml`, update the D1 database ID, and configure the initial leader
@@ -207,8 +260,10 @@ domain separately after each deployment.
 ├── src/index.ts            Worker router and legacy account API
 ├── src/workspace.ts        Profile, staff-review, NFC, and vote APIs
 ├── src/member-workspace.ts Project, team, inbox, and preference APIs
+├── src/admin.ts          Staff management APIs and scheduled delivery
 ├── src/github.ts           GitHub README import and safe rendering
 ├── tests/workspace.mjs     Isolated local integration and fixture runner
+├── tests/admin.mjs         Isolated admin integration and fixture runner
 ├── package.json            Build and deployment scripts
 └── wrangler.toml           Cloudflare bindings and custom domain
 ```
