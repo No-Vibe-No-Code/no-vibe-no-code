@@ -85,7 +85,7 @@ const renderProfile = () => {
       }
     });
   }
-  document.getElementById("profileProjects").innerHTML = projects.length ? projects.map((project) => `<a class="project-card" href="/project.html?project=${encodeURIComponent(project.slug)}"><div class="project-card-body"><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p><span class="badge success">Published</span></div></a>`).join("") : '<div class="empty-state"><h3>No public projects</h3><p>Published work will appear here.</p></div>';
+  document.getElementById("profileProjects").innerHTML = projects.length ? projects.map((project) => `<a class="project-card" href="/projects/${encodeURIComponent(project.slug)}"><div class="project-card-body"><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p><span class="badge success">Published</span></div></a>`).join("") : '<div class="empty-state"><h3>No public projects</h3><p>Published work will appear here.</p></div>';
 };
 
 const linksEditor = document.getElementById("linksEditor");

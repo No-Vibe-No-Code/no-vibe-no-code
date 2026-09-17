@@ -1,21 +1,20 @@
-const { requestJson, escapeHtml } = window.NVNC;
-const Motion = window.NVNCMotion;
-let allProjects = [];
-let nextCursor;
-const render = () => {
-  const query = document.getElementById("projectSearch").value.toLowerCase();
-  const projects = allProjects.filter((project) => `${project.title} ${project.summary} ${project.owner_name}`.toLowerCase().includes(query));
-  document.getElementById("gallery").innerHTML = projects.length ? projects.map((project) => `<article class="project-card"><div class="project-card-body"><span class="badge success">Published</span><h3><a href="/project.html?project=${encodeURIComponent(project.slug)}">${escapeHtml(project.title)}</a></h3><p>${escapeHtml(project.summary || "No summary yet.")}</p><a href="/user/${encodeURIComponent(project.owner_slug)}">By ${escapeHtml(project.owner_name)}</a></div></article>`).join("") : '<div class="empty-state"><h3>No matching projects</h3><p>Try a different search.</p></div>';
-  Motion.reveal(document.querySelectorAll("#gallery .project-card"));
-};
-const load = async (append = false) => {
-  const result = await requestJson(`/api/projects?status=published&limit=24${append && nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : ""}`);
-  allProjects = append ? allProjects.concat(result.projects || []) : result.projects || [];
-  nextCursor = result.nextCursor;
-  if (nextCursor) Motion.show(document.getElementById("loadMore"));
-  else Motion.hide(document.getElementById("loadMore"));
-  render();
-};
-document.getElementById("projectSearch").oninput = render;
-document.getElementById("loadMore").onclick = () => load(true);
-load().catch((error) => { document.getElementById("gallery").innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`; });
+(() => {
+  const {requestJson:request,escapeHtml:e}=window.NVNC;
+  let items=[],cursor,version=0,timer;
+  const input=document.getElementById('projectSearch'),more=document.getElementById('loadMore'),container=document.getElementById('gallery');
+  input.value=new URLSearchParams(location.search).get('q')||'';
+  async function load(append=false){
+    const current=++version;more.disabled=true;
+    try{
+      const params=new URLSearchParams({status:'published',visibility:'public',limit:'24',q:input.value});
+      if(append&&cursor)params.set('cursor',cursor);
+      const data=await request('/api/projects?'+params);if(current!==version)return;
+      items=append?[...items,...data.projects]:data.projects;cursor=data.nextCursor;
+      more.classList.toggle('hidden',!cursor);
+      container.innerHTML=items.length?items.map(p=>`<article class="project-card">${p.coverUrl?`<img class="project-cover" src="${e(p.coverUrl)}" alt="" loading="lazy">`:''}<div class="project-card-body"><span class="badge success">Published</span><h3><a href="/projects/${encodeURIComponent(p.slug)}">${e(p.title)}</a></h3><p>${e(p.summary||'No description yet.')}</p><a href="/user/${encodeURIComponent(p.owner_slug)}">By ${e(p.owner_name)}</a></div></article>`).join(''):'<div class="ws-empty"><h3>No matching projects</h3><p>Try another search, or come back soon for new builds.</p></div>';
+    }catch(error){container.innerHTML=`<div class="ws-error"><p>${e(error.message)}</p><button id="retryGallery" class="secondary-button">Try again</button></div>`;document.getElementById('retryGallery').onclick=()=>load();}
+    finally{more.disabled=false;}
+  }
+  input.oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{history.replaceState({},'','/gallery'+(input.value?'?q='+encodeURIComponent(input.value):''));load();},300);};
+  more.onclick=()=>load(true);load();
+})();

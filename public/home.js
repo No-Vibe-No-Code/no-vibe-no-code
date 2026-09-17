@@ -1,88 +1,19 @@
-const { requestJson, jsonOptions, escapeHtml, currentUser, setAccount, loadUnreadCount } = window.NVNC;
-const Motion = window.NVNCMotion;
-let user;
-let activeTeamId;
-const empty = (title, body, action = "") => `<div class="empty-state"><h3>${title}</h3><p>${body}</p>${action}</div>`;
-const renderProjects = (projects) => {
-  document.getElementById("projectCount").textContent = projects.length;
-  document.getElementById("projectList").innerHTML = projects.length ? projects.map((project) => `<article class="row"><div class="row-copy"><strong>${escapeHtml(project.title)}</strong><span>${escapeHtml(project.summary || "No summary yet")}</span></div><span class="badge ${project.status === "published" ? "success" : ""}">${escapeHtml(project.status)}</span></article>`).join("") : empty("No projects yet", "Create a draft and turn your next idea into something people can try.", '<button class="primary-button" data-create-project>Create project</button>');
-  Motion.reveal(document.querySelectorAll("#projectList .row"));
-};
-const renderTeams = (teams) => {
-  document.getElementById("teamCount").textContent = teams.length;
-  document.getElementById("teamList").innerHTML = teams.length ? teams.map((team) => `<a class="row" href="/home.html?team=${encodeURIComponent(team.id)}"><div class="row-copy"><strong>${escapeHtml(team.name)}</strong><span>${escapeHtml(team.role || "member")}</span></div></a>`).join("") : empty("No team yet", "Create a team or accept an invitation.");
-  Motion.reveal(document.querySelectorAll("#teamList .row"));
-};
-const renderInvitations = (invitations) => {
-  document.getElementById("invitationList").innerHTML = invitations.length ? invitations.map((invite) => `<article class="row" data-invitation="${escapeHtml(invite.id)}"><div class="row-copy"><strong>${escapeHtml(invite.team_name)}</strong><span>Invited by ${escapeHtml(invite.inviter_name)}</span></div><div><button class="primary-button" data-answer="accepted">Accept</button><button class="text-button" data-answer="declined">Decline</button></div></article>`).join("") : empty("No invitations", "New team invitations will appear here.");
-  Motion.reveal(document.querySelectorAll("#invitationList .row"));
-};
-const renderNotifications = (notifications) => {
-  document.getElementById("notificationList").innerHTML = notifications.length ? notifications.map((item) => `<a class="row ${item.read_at ? "" : "is-unread"}" href="${escapeHtml(item.action_url || "#")}" data-notification="${escapeHtml(item.id)}"><div class="row-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.body || "")}</span></div><span>${new Date(item.created_at).toLocaleDateString()}</span></a>`).join("") : empty("Inbox clear", "Invitations, reviews, and club broadcasts will appear here.");
-  Motion.reveal(document.querySelectorAll("#notificationList .row"));
-};
-const load = async () => {
-  user = await currentUser();
-  setAccount(user);
-  document.getElementById("welcome").textContent = `Welcome back, ${user.display_name}.`;
-  const [projects, teams, notifications] = await Promise.all([
-    requestJson("/api/projects?mine=1&limit=20"),
-    requestJson("/api/teams?mine=1&limit=20"),
-    requestJson("/api/notifications?limit=20")
-  ]);
-  renderProjects(projects.projects || projects.results || []);
-  renderTeams(teams.teams || teams.results || []);
-  renderInvitations(teams.invitations || []);
-  const notices = notifications.notifications || notifications.results || [];
-  renderNotifications(notices);
-  const unread = notices.filter((item) => !item.read_at).length;
-  document.getElementById("unreadCount").textContent = unread;
-  loadUnreadCount();
-  const selectedTeam = new URLSearchParams(location.search).get("team");
-  if (selectedTeam) openTeam(selectedTeam);
-};
-const openTeam = async (teamId) => {
-  const result = await requestJson(`/api/teams/${encodeURIComponent(teamId)}`);
-  activeTeamId = result.team.id;
-  document.getElementById("teamDetailName").textContent = result.team.name;
-  document.getElementById("teamMembers").innerHTML = result.members.map((member) => `<a class="row" href="/user/${encodeURIComponent(member.public_slug)}"><div class="row-copy"><strong>${escapeHtml(member.display_name)}</strong><span>${escapeHtml(member.role)}</span></div></a>`).join("");
-  const canInvite = ["owner","admin"].includes(result.viewerRole);
-  if (canInvite) Motion.show(document.getElementById("inviteForm"));
-  else Motion.hide(document.getElementById("inviteForm"));
-  Motion.show(document.getElementById("teamDetail"));
-};
-const projectDialog = document.getElementById("projectDialog");
-const teamDialog = document.getElementById("teamDialog");
-const openProject = () => Motion.openDialog(projectDialog);
-document.getElementById("newProject").onclick = openProject;
-document.getElementById("newProjectSecondary").onclick = openProject;
-document.addEventListener("click", async (event) => {
-  if (event.target.matches("[data-create-project]")) openProject();
-  if (event.target.matches("[data-close]")) Motion.closeDialog(document.getElementById(event.target.dataset.close));
-  const answer = event.target.closest("[data-answer]");
-  if (answer) {
-    const row = answer.closest("[data-invitation]");
-    await requestJson(`/api/team-invitations/${row.dataset.invitation}/respond`, jsonOptions("POST", { status: answer.dataset.answer }));
-    await Motion.remove(row);
-    loadUnreadCount();
+(() => {
+  const {requestJson:request,escapeHtml:e}=window.NVNC;
+  const {requireUser,icon}=window.NVNCWorkspace;
+  const query=new URLSearchParams(location.search);
+  if(query.get('team')) { location.replace('/teams/'+encodeURIComponent(query.get('team')));return; }
+  if(['#projects','#teams','#notifications'].includes(location.hash)) {location.replace('/'+location.hash.slice(1));return;}
+  const empty=(title,body,href,label)=>`<div class="ws-empty"><img src="/mascots/nachoneko-chibi-laptop.png" alt=""><h3>${title}</h3><p>${body}</p><a class="secondary-button" href="${href}">${label}</a></div>`;
+  async function load() {
+    const user=await requireUser(),data=await request('/api/workspace/summary');
+    document.getElementById('homePage').innerHTML=`<header class="page-heading"><div><h1>Welcome back, ${e(user.display_name)}.</h1><p>A little progress, every day. Here’s what’s happening in your workspace.</p></div><a class="primary-button" href="/projects/new">${icon('plus')}New project</a></header>
+    <section class="ws-summary" aria-label="Workspace summary">${[['projects','Projects',data.counts.projects],['teams','Teams',data.counts.teams],['notifications?filter=unread','Unread',data.counts.unread],['teams?tab=invitations','Invitations',data.counts.invitations]].map(([href,label,count])=>`<a href="/${href}"><strong ${label==='Unread'?'id="homeUnread"':''}>${count}</strong><span>${label}</span></a>`).join('')}</section>
+    <div class="ws-home-grid"><section class="ws-home-panel"><header><h2>Your projects</h2><a href="/projects">View all →</a></header>${data.projects.length?`<div class="ws-panel">${data.projects.map(p=>`<a class="ws-home-row" href="/projects/${encodeURIComponent(p.slug)}">${icon((data.preferences.pinnedProjects||[]).includes(p.id)?'pin':'projects')}<div><strong>${e(p.title)}</strong><p>${e(p.summary||'Make your next idea real.')}</p></div><span class="ws-status ${e(p.status)}">${e(p.status)}</span></a>`).join('')}</div>`:empty('Your next idea starts here','Create a draft, build at your pace, then share it with the club.','/projects/new','Create a project')}</section>
+    <section class="ws-home-panel"><header><h2>Your teams</h2><a href="/teams">View all →</a></header>${data.teams.length?`<div class="ws-panel">${data.teams.map(t=>`<a class="ws-home-row" href="/teams/${encodeURIComponent(t.slug)}">${icon((data.preferences.pinnedTeams||[]).includes(t.id)?'pin':'teams')}<div><strong>${e(t.name)}</strong><p>${e(t.role)} · ${t.memberCount} members</p></div>${icon('arrow')}</a>`).join('')}</div>`:empty('Better, together','Find your collaborators or bring a new team together.','/teams/new','Create a team')}</section></div>
+    ${data.counts.invitations?`<section class="ws-callout"><div><h3>${data.counts.invitations} pending invitation${data.counts.invitations===1?'':'s'}</h3><p>Someone wants to build with you. Take a look.</p></div><a class="primary-button" href="/teams?tab=invitations">Review invitations</a></section>`:''}
+    <section class="ws-callout"><div><h3>Find your people.</h3><p>Explore what the club is making and meet the people behind it.</p></div><div class="ws-actions"><a class="secondary-button" href="/gallery">Explore the gallery</a><a class="secondary-button" href="/members">Meet the builders</a></div></section>`;
   }
-  const notification = event.target.closest("[data-notification]");
-  if (notification) {
-    event.preventDefault();
-    await requestJson(`/api/notifications/${notification.dataset.notification}/read`, jsonOptions("POST", {}));
-    notification.classList.remove("is-unread");
-    loadUnreadCount();
-    if (notification.getAttribute("href") !== "#") location.href = notification.getAttribute("href");
-  }
-});
-document.getElementById("newTeam").onclick = () => Motion.openDialog(teamDialog);
-document.getElementById("closeTeamDetail").onclick = () => Motion.hide(document.getElementById("teamDetail"));
-document.getElementById("inviteForm").onsubmit = async (event) => { event.preventDefault(); const output=document.getElementById("inviteMessage"); try { await requestJson(`/api/teams/${activeTeamId}/invitations`,jsonOptions("POST",Object.fromEntries(new FormData(event.target)))); output.textContent="Invitation sent."; event.target.reset(); } catch(error){output.textContent=error.message;} };
-document.getElementById("editProfile").onclick = () => location.href = `/profile.html?edit=1`;
-const toggleNotifications = () => Motion.toggle(document.getElementById("notificationPanel"));
-document.getElementById("notificationButton").onclick = toggleNotifications;
-document.getElementById("notificationNav").onclick = toggleNotifications;
-document.getElementById("markAllRead").onclick = async () => { await requestJson("/api/notifications/read-all", jsonOptions("POST", {})); document.querySelectorAll(".is-unread").forEach((row) => row.classList.remove("is-unread")); loadUnreadCount(); };
-document.getElementById("projectForm").onsubmit = async (event) => { event.preventDefault(); const message = document.getElementById("projectMessage"); try { await requestJson("/api/projects", jsonOptions("POST", Object.fromEntries(new FormData(event.target)))); await Motion.closeDialog(projectDialog); location.reload(); } catch (error) { message.textContent = error.message; } };
-document.getElementById("teamForm").onsubmit = async (event) => { event.preventDefault(); const message = document.getElementById("teamMessage"); try { await requestJson("/api/teams", jsonOptions("POST", Object.fromEntries(new FormData(event.target)))); await Motion.closeDialog(teamDialog); location.reload(); } catch (error) { message.textContent = error.message; } };
-load().catch((error) => { document.querySelector(".product-content").innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`; });
+  window.addEventListener('workspace:unread',event=>{const el=document.getElementById('homeUnread');if(el)el.textContent=event.detail;});
+  load().catch(error=>{document.getElementById('homePage').innerHTML=`<div class="ws-error"><h2>Couldn’t open your workspace</h2><p>${e(error.message)}</p><a class="secondary-button" href="/home">Try again</a></div>`;});
+})();

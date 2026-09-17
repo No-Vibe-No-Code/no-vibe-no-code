@@ -109,7 +109,7 @@ const markdown = (source) => {
     .replace(/\n/g, "<br>");
 };
 const currentUser = () => requestJson("/api/me").then(({ user }) => {
-  if (!user) location.href = "/#account";
+  if (!user) location.href = `/?account=login&returnTo=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
   return user;
 });
 const setAccount = (user) => {

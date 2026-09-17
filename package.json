@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "build:assets": "esbuild public/app.js public/admin.js public/shared.js public/product-motion.js public/home.js public/profile.js public/gallery.js public/form.js public/project.js public/members.js public/nfc.js public/vote.js --minify --format=iife --outdir=public/min --entry-names=[name]",
+    "test:workspace": "npm run build:assets && node tests/workspace.mjs",
+    "build:assets": "esbuild public/app.js public/admin.js public/shared.js public/product-motion.js public/home.js public/workspace-shell.js public/workspace.js public/profile.js public/gallery.js public/form.js public/project.js public/members.js public/nfc.js public/vote.js --minify --format=iife --outdir=public/min --entry-names=[name]",
     "deploy": "npm run build:assets && wrangler deploy",
     "check": "npm run build:assets && wrangler deploy --dry-run"
   },

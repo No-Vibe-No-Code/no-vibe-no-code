@@ -28,6 +28,9 @@
 /product.css
   Cache-Control: public, max-age=31536000, immutable
 
+/workspace.css
+  Cache-Control: public, max-age=31536000, immutable
+
 /min/*
   Cache-Control: public, max-age=31536000, immutable
 /*
