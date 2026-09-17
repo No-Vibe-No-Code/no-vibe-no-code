@@ -289,6 +289,11 @@ export default {
         profileUrl.search = url.search;
         return withSecurityHeaders(await env.ASSETS.fetch(new Request(profileUrl, request)), request);
       }
+      if (/^\/(projects|teams)(?:\/[^/]+)?\/?$/.test(url.pathname) || url.pathname === "/notifications") {
+        const workspaceUrl = new URL("/workspace", request.url);
+        workspaceUrl.search = url.search;
+        return withSecurityHeaders(await env.ASSETS.fetch(new Request(workspaceUrl, request)), request);
+      }
       if (url.pathname.startsWith("/nfc/") && url.pathname.length > 5) {
         const nfcUrl = new URL("/nfc", request.url);
         nfcUrl.searchParams.set("token", url.pathname.slice(5));
