@@ -14,7 +14,7 @@
   const qp = new URLSearchParams(location.search);
   const date = value => value ? new Date(value).toLocaleString() : '—';
   const badge = value => '<span class="aw-badge" data-tone="' + (['new','submitted','scheduled','pending','in-progress'].includes(value)?'warning':['suspended','archived','failed','changes-requested','disabled'].includes(value)?'danger':['published','active','resolved','delivered','claimed'].includes(value)?'success':'') + '">' + e(value||'—') + '</span>';
-  const heading = (title,desc,actions='') => '<header class="aw-heading"><div><div class="aw-eyebrow">CLUB ADMINISTRATION / ' + e(section) + '</div><h1>' + e(title) + '</h1><p>' + e(desc) + '</p></div><div class="aw-actions">' + actions + '</div></header>';
+  const heading = (title,desc,actions='') => '<header class="aw-heading"><div>' + (detail?'<a class="aw-back" href="/admin/'+e(section)+'">← Back to '+e(names[section])+'</a>':'') + '<div class="aw-eyebrow">CLUB ADMINISTRATION / ' + e(section) + '</div><h1>' + e(title) + '</h1><p>' + e(desc) + '</p></div><div class="aw-actions">' + actions + '</div></header>';
   const btn = (text,attrs='',kind='') => '<button type="button" class="aw-btn ' + kind + '" ' + attrs + '>' + e(text) + '</button>';
   const linkBtn = (text,href,kind='') => '<a class="aw-btn ' + kind + '" href="' + e(href) + '">' + e(text) + '</a>';
   const empty = (title,desc) => '<div class="aw-empty"><h2>' + e(title) + '</h2><p>' + e(desc) + '</p></div>';
@@ -42,15 +42,22 @@
   function pageNav(result){
     const total=result.total||0,page=result.page||1,limit=result.limit||20;
     const urlFor=p=>{const search=new URLSearchParams(location.search);search.set('page',String(p));return location.pathname+'?'+search;};
-    return '<div class="aw-pages"><span>' + (total?(1+(page-1)*limit)+'–'+Math.min(page*limit,total):'0') + ' of ' + total + ' records</span><div class="aw-actions">' + (page>1?linkBtn('Previous',urlFor(page-1)):'') + (result.hasMore?linkBtn('Next',urlFor(page+1)):'') + '</div></div>';
+    return '<div class="aw-pages" data-total="' + total + '"><span>' + (total?(1+(page-1)*limit)+'–'+Math.min(page*limit,total):'0') + ' of ' + total + ' records</span><div class="aw-actions">' + (page>1?linkBtn('Previous',urlFor(page-1)):'') + (result.hasMore?linkBtn('Next',urlFor(page+1)):'') + '</div></div>';
   }
   function toolbar(filters){
     const fields=filters.map(f=>f.type==='search'?'<input type="search" name="q" value="' + e(qp.get('q')||'') + '" placeholder="' + e(f.placeholder||'Search') + '" aria-label="Search">':select(f.name,f.options,qp.get(f.name)||'',f.label));
-    return '<form class="aw-toolbar" id="adminFilters">' + fields.join('') + '<button class="aw-btn" type="submit">Apply filters</button></form>';
+    const search=filters[0]?.type==='search'?fields.shift():'';
+    return '<form class="aw-toolbar" id="adminFilters">' + search + '<details class="aw-filter-details" '+(matchMedia('(min-width: 821px)').matches?'open':'')+'><summary>Filters</summary><div class="aw-filter-fields">' + fields.join('') + '<button class="aw-btn" type="submit">Apply filters</button><button class="aw-btn aw-filter-clear" type="button" data-admin-clear>Clear</button></div></details></form>';
   }
   function bindToolbar(){
     const form=document.getElementById('adminFilters');if(!form)return;
+    const total=root.querySelector('.aw-pages[data-total]')?.dataset.total;
+    const list=form.nextElementSibling;
+    if(total!==undefined&&list?.classList.contains('aw-list')){
+      const count=document.createElement('p');count.className='collection-result-count';count.textContent=total+' '+(Number(total)===1?'result':'results');list.before(count);
+    }
     form.onsubmit=event=>{event.preventDefault();const next=new URLSearchParams();if(qp.get('tab'))next.set('tab',qp.get('tab'));for(const [key,value] of new FormData(form))if(String(value).trim())next.set(key,String(value).trim());location.href=location.pathname+(next.size?'?'+next:'');};
+    form.querySelector('[data-admin-clear]').onclick=()=>{const next=new URLSearchParams();if(qp.get('tab'))next.set('tab',qp.get('tab'));location.href=location.pathname+(next.size?'?'+next:'');};
   }
   function value(id){return document.getElementById(id)?.value??'';}
   function check(id){return Boolean(document.getElementById(id)?.checked);}
@@ -117,6 +124,7 @@
       '</div>'+detailSide([['Status',badge(p.status)],['Visibility',badge(p.visibility)],['Owner',e(p.owner_name)],['Team',e(p.team_name||'—')],['Submitted',e(date(p.submitted_at))],['Demo',p.demo_url?'<a href="'+e(p.demo_url)+'" target="_blank" rel="noopener noreferrer">Open demo</a>':'—'],['Source',p.source_url?'<a href="'+e(p.source_url)+'" target="_blank" rel="noopener noreferrer">Open source</a>':'—']])+'</div>';
   }
   let draftSchema;
+  const expandedQuestions=new Set();
   const questionTypes=['short-text','paragraph','email','number','url','date','time','linear-scale','single-choice','checkboxes','dropdown','consent'];
   const formBase=id=>'/admin/forms/'+encodeURIComponent(id);
   const datetimeInput=value=>{if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
@@ -137,17 +145,19 @@
   }
   function renderBuilder(){
     const host=document.getElementById('formBuilder');if(!host)return;
+    if(!expandedQuestions.size)draftSchema.sections.forEach(section=>{if(section.fields[0])expandedQuestions.add(section.fields[0].id);});
     host.innerHTML=draftSchema.sections.map((s,si)=>'<div class="aw-form-section aw-builder-section" data-id="'+e(s.id)+'">'+
       '<div class="aw-question-head"><h2>Section '+(si+1)+'</h2>'+btn('Remove section','data-action="section-remove" data-index="'+si+'"','aw-danger')+'</div>'+
       field('Section title','sectionTitle'+si,s.title,'text','class="aw-section-title" maxlength="150"')+
       s.fields.map((q,qi)=>'<div class="aw-question aw-builder-question" data-id="'+e(q.id)+'">'+
-        '<div class="aw-question-head"><strong>Question '+(qi+1)+'</strong><div class="aw-actions">'+btn('↑','data-action="question-up" data-section="'+si+'" data-index="'+qi+'" aria-label="Move question up"')+btn('↓','data-action="question-down" data-section="'+si+'" data-index="'+qi+'" aria-label="Move question down"')+btn('Remove','data-action="question-remove" data-section="'+si+'" data-index="'+qi+'"','aw-danger')+'</div></div>'+
-        '<div class="aw-fields">'+field('Question label','label'+si+'-'+qi,q.label,'text','class="aw-question-label" maxlength="150"')+
-        '<div class="aw-field"><label>Question type</label><select class="aw-question-type">'+questionTypes.map(t=>'<option value="'+e(t)+'"'+(t===q.type?' selected':'')+'>'+e(t)+'</option>').join('')+'</select></div>'+
+        '<div class="aw-question-head"><button type="button" class="aw-question-toggle" data-action="question-toggle" aria-expanded="'+expandedQuestions.has(q.id)+'">Question '+(qi+1)+' · '+e(q.label||'Untitled')+'</button><div class="aw-actions">'+btn('↑','data-action="question-up" data-section="'+si+'" data-index="'+qi+'" aria-label="Move question up"')+btn('↓','data-action="question-down" data-section="'+si+'" data-index="'+qi+'" aria-label="Move question down"')+btn('Remove','data-action="question-remove" data-section="'+si+'" data-index="'+qi+'"','aw-danger')+'</div></div>'+
+        '<div class="aw-question-content" '+(expandedQuestions.has(q.id)?'':'hidden')+'><div class="aw-fields">'+field('Question label','label'+si+'-'+qi,q.label,'text','class="aw-question-label" maxlength="150"')+
+        '<div class="aw-field"><label>Question type<select class="aw-question-type">'+questionTypes.map(t=>'<option value="'+e(t)+'"'+(t===q.type?' selected':'')+'>'+e(t)+'</option>').join('')+'</select></label></div></div>'+
+        '<label class="aw-checkbox"><input type="checkbox" class="aw-question-required"'+(q.required?' checked':'')+'> Required</label>'+
+        '<details class="aw-question-advanced" '+(['single-choice','checkboxes','dropdown'].includes(q.type)?'open':'')+'><summary>Helper text, placeholder and options</summary><div class="aw-fields">'+
         field('Helper text','help'+si+'-'+qi,q.help,'text','class="aw-question-help" maxlength="250"')+
         field('Placeholder','placeholder'+si+'-'+qi,q.placeholder,'text','class="aw-question-placeholder" maxlength="150"')+
-        '<div class="aw-field full"><label>Options (one per line, for choice questions)</label><textarea class="aw-question-options" rows="3">'+e((q.options||[]).join('\n'))+'</textarea></div></div>'+
-        '<label class="aw-checkbox"><input type="checkbox" class="aw-question-required"'+(q.required?' checked':'')+'> Required</label></div>').join('')+
+        '<div class="aw-field full"><label>Options (one per line, for choice questions)<textarea class="aw-question-options" rows="3">'+e((q.options||[]).join('\n'))+'</textarea></label></div></div></details></div></div>').join('')+
       '<div class="aw-actions"><select class="aw-add-type" aria-label="New question type">'+questionTypes.map(t=>'<option value="'+e(t)+'">'+e(t)+'</option>').join('')+'</select>'+btn('Add question','data-action="question-add" data-section="'+si+'"')+'</div></div>').join('');
   }
   async function loadForms(){
@@ -180,7 +190,7 @@
         textField('Description','formDescription',f.description,3)+
         field('Opens at (local time)','formOpens',datetimeInput(f.opens_at),'datetime-local')+
         field('Closes at (local time)','formCloses',datetimeInput(f.closes_at),'datetime-local')+'</div>')+
-      '<div id="formBuilder"></div><div class="aw-actions">'+btn('Add section','data-action="section-add"')+
+      '<div id="formBuilder"></div><div class="aw-actions aw-builder-actions">'+btn('Add section','data-action="section-add"')+
       btn(isNew?'Create draft':'Save new revision','data-action="form-save" data-id="'+e(f.id||'')+'"','aw-primary')+
       (isNew?'':btn('Save and publish','data-action="form-publish" data-id="'+e(f.id)+'"'))+'</div></div></div>'+
       detailSide([['Status',badge(f.status)],['Access',e(f.access)],['Opens',e(date(f.opens_at))],['Closes',e(date(f.closes_at))]])+'</div>';
@@ -350,6 +360,12 @@
     if(!id){const result=await mutate('/api/admin/broadcasts/drafts','POST',body);return result.id;}
     await mutate('/api/admin/broadcasts/'+id,'PUT',body);return id;
   }
+  root.addEventListener('change',event=>{
+    if(event.target.matches('.aw-question-type')&&['single-choice','checkboxes','dropdown'].includes(event.target.value))event.target.closest('.aw-builder-question').querySelector('.aw-question-advanced').open=true;
+  });
+  root.addEventListener('input',event=>{
+    if(event.target.matches('.aw-question-label'))event.target.closest('.aw-builder-question').querySelector('.aw-question-toggle').textContent='Question '+(1+[...event.target.closest('.aw-builder-section').querySelectorAll('.aw-builder-question')].indexOf(event.target.closest('.aw-builder-question')))+' · '+(event.target.value||'Untitled');
+  });
   document.addEventListener('click',event=>{
     const target=event.target.closest('[data-action]');
     if(!target)return;
@@ -381,10 +397,11 @@
       }
       if(action==='section-add'){readEditor();draftSchema.sections.push({id:crypto.randomUUID(),title:'',fields:[]});renderBuilder();return;}
       if(action==='section-remove'){readEditor();if(draftSchema.sections.length===1)throw new Error('Keep at least one section.');draftSchema.sections.splice(Number(target.dataset.index),1);renderBuilder();return;}
+      if(action==='question-toggle'){const question=target.closest('.aw-builder-question'),content=question.querySelector('.aw-question-content'),open=content.hidden;content.hidden=!open;target.setAttribute('aria-expanded',String(open));if(open)expandedQuestions.add(question.dataset.id);else expandedQuestions.delete(question.dataset.id);return;}
       if(['question-add','question-remove','question-up','question-down'].includes(action)){
         readEditor();const si=Number(target.dataset.section),qi=Number(target.dataset.index),fields=draftSchema.sections[si].fields;
-        if(action==='question-add'){const type=target.parentElement.querySelector('.aw-add-type').value;fields.push({id:crypto.randomUUID(),type,label:'Untitled question',help:'',placeholder:'',required:false,options:['single-choice','checkboxes','dropdown'].includes(type)?['Option 1']:[]});}
-        if(action==='question-remove')fields.splice(qi,1);
+        if(action==='question-add'){const type=target.parentElement.querySelector('.aw-add-type').value,item={id:crypto.randomUUID(),type,label:'Untitled question',help:'',placeholder:'',required:false,options:['single-choice','checkboxes','dropdown'].includes(type)?['Option 1']:[]};fields.push(item);expandedQuestions.add(item.id);}
+        if(action==='question-remove'){expandedQuestions.delete(fields[qi].id);fields.splice(qi,1);}
         if(action==='question-up'&&qi>0)[fields[qi-1],fields[qi]]=[fields[qi],fields[qi-1]];
         if(action==='question-down'&&qi<fields.length-1)[fields[qi+1],fields[qi]]=[fields[qi],fields[qi+1]];
         renderBuilder();return;
@@ -455,9 +472,28 @@
     });
   });
   const menu=document.getElementById('adminMenu'),scrim=document.getElementById('adminScrim');
-  function setMenu(open){document.body.classList.toggle('aw-menu-open',open);menu.setAttribute('aria-expanded',String(open));scrim.hidden=!open;if(open)nav.querySelector('a')?.focus();else menu.focus();}
+  const sidebar=document.getElementById('adminSidebar'),main=document.querySelector('.aw-main');
+  function setMenu(open){
+    document.body.classList.toggle('aw-menu-open',open);
+    menu.setAttribute('aria-expanded',String(open));scrim.hidden=!open;main.inert=open;
+    document.body.style.overflow=open?'hidden':'';
+    if(open){sidebar.setAttribute('role','dialog');sidebar.setAttribute('aria-modal','true');sidebar.setAttribute('aria-label','Administration menu');nav.querySelector('a')?.focus();}
+    else{sidebar.removeAttribute('role');sidebar.removeAttribute('aria-modal');sidebar.removeAttribute('aria-label');menu.focus();}
+  }
   menu.onclick=()=>setMenu(!document.body.classList.contains('aw-menu-open'));scrim.onclick=()=>setMenu(false);
-  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('aw-menu-open'))setMenu(false);});
+  document.getElementById('adminSidebarClose').onclick=()=>setMenu(false);
+  sidebar.addEventListener('click',event=>{if(event.target.closest('a')&&document.body.classList.contains('aw-menu-open'))setMenu(false);});
+  document.addEventListener('keydown',event=>{
+    if(!document.body.classList.contains('aw-menu-open'))return;
+    if(event.key==='Escape'){event.preventDefault();setMenu(false);return;}
+    if(event.key==='Tab'){
+      const focusable=[...sidebar.querySelectorAll('a,button,[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&!el.disabled);
+      if(!focusable.length)return;
+      const first=focusable[0],last=focusable.at(-1);
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    }
+  });
   async function boot(){
     const hash=location.hash.slice(1).toLowerCase();
     if(path==='/admin.html'||hash&&sections.includes(hash)){location.replace('/admin'+(hash&&hash!=='overview'?'/'+hash:'')+location.search);return;}
@@ -470,7 +506,7 @@
     document.getElementById('adminTopRole').textContent=user.role;
     const visible=sections.filter(s=>!['forms','broadcasts'].includes(s)||['club-leader','teacher'].includes(user.role));
     nav.innerHTML=visible.map(s=>'<a href="/admin'+(s==='overview'?'':'/'+s)+'"'+(s===section?' aria-current="page"':'')+'><span>'+e(names[s])+'</span></a>').join('');
-    document.getElementById('adminCrumb').textContent=names[section]+(detail?' / Detail':'');
+    document.getElementById('adminCrumb').textContent=names[section];
     document.title=names[section]+' / Administration / No Vibe No Code';
     const pages={overview:loadOverview,members:loadMembers,forms:loadForms,projects:loadProjects,teams:loadTeams,broadcasts:loadBroadcasts,contacts:loadContacts,settings:loadSettings};
     await pages[section]();

@@ -6,6 +6,8 @@ const requestedSlug = params.get("slug") || routeName;
 let ownUser;
 let member;
 let projects = [];
+let profileDirty = false;
+document.querySelector(".profile-card").append(document.querySelector(".profile-rail"));
 
 const iconSvg = (kind) => {
   const paths = {
@@ -95,7 +97,7 @@ const addLinkRow = (link = {}) => {
   row.innerHTML = '<input class="link-label-input" type="text" maxlength="60" placeholder="Label (e.g. YouTube)" aria-label="Link label"><input class="link-url-input" type="url" maxlength="500" placeholder="https://..." aria-label="Link URL"><button class="text-button remove-link" type="button" aria-label="Remove link">×</button>';
   row.querySelector(".link-label-input").value = link.label || "";
   row.querySelector(".link-url-input").value = link.url || "";
-  row.querySelector(".remove-link").onclick = () => { row.remove(); };
+  row.querySelector(".remove-link").onclick = () => { row.remove(); profileDirty = true; };
   linksEditor.appendChild(row);
 };
 const renderLinksEditor = (links = []) => {
@@ -167,15 +169,139 @@ const load = async () => {
     document.getElementById("readmeDraft").value = ownUser.readme_draft || "";
     renderLinksEditor(ownUser.links || []);
     await loadMyCards().catch((error) => { nfcStatus.textContent = error.message; });
-    if (params.get("edit") === "1") Motion.show(document.getElementById("profileEditor"));
+    if (new URLSearchParams(location.search).get("edit") === "1") showEditorFromUrl(false);
   }
 };
 
-document.getElementById("editToggle").onclick = () => Motion.toggle(document.getElementById("profileEditor"));
+const profileEditor = document.getElementById("profileEditor");
+const profileForm = document.getElementById("profileForm");
+const profileHeading = document.querySelector(".page-heading");
+const profileMeta = document.querySelector(".profile-meta");
+const profileBio = document.getElementById("profileBio");
+const editToggle = document.getElementById("editToggle");
+const avatarActions = document.getElementById("avatarActions");
+const profileBack = document.createElement("a");
+profileBack.className = "profile-back";
+profileBack.href = "/members";
+profileBack.textContent = "← Back to members";
+document.querySelector(".readme-layout").before(profileBack);
+const editSections = ["profile", "links", "nfc", "readme"];
+const editorNav = document.createElement("nav");
+editorNav.className = "profile-edit-nav";
+editorNav.setAttribute("aria-label", "Profile editor sections");
+editorNav.innerHTML = editSections.map((name) => `<button type="button" data-profile-section="${name}">${name === "nfc" ? "NFC cards" : name[0].toUpperCase() + name.slice(1)}</button>`).join("");
+profileForm.before(editorNav);
+const closeEditor = document.createElement("button");
+closeEditor.type = "button";
+closeEditor.className = "text-button profile-editor-close";
+closeEditor.textContent = "← Back to profile";
+profileEditor.querySelector(".panel-header").prepend(closeEditor);
+const panelNodes = {
+  profile: [profileForm.querySelector(".form-grid"), profileForm.querySelector(".privacy-note"), document.getElementById("bio").closest(".field"), document.getElementById("skillsInput").closest(".field")],
+  links: [profileForm.querySelector(".profile-links-editor")],
+  nfc: [profileForm.querySelector(".nfc-settings")],
+  readme: [profileForm.querySelector(".github-import-field"), document.getElementById("readmeDraft").closest(".field")],
+};
+for (const name of editSections) {
+  const panel = document.createElement("section");
+  panel.className = "profile-edit-panel";
+  panel.dataset.profilePanel = name;
+  panel.setAttribute("aria-label", name === "nfc" ? "NFC cards" : name[0].toUpperCase() + name.slice(1));
+  panelNodes[name].forEach((node) => panel.append(node));
+  profileForm.insertBefore(panel, document.getElementById("profileMessage"));
+}
+function arrangeProfileHeader() {
+  const mobile = matchMedia("(max-width: 820px)").matches;
+  profileHeading.hidden = mobile;
+  if (mobile) {
+    profileMeta.append(profileBio, editToggle);
+    profileForm.querySelector('[data-profile-panel="profile"]').prepend(avatarActions);
+  } else {
+    profileHeading.querySelector("div").append(profileBio);
+    profileHeading.append(editToggle);
+    profileMeta.before(avatarActions);
+  }
+}
+arrangeProfileHeader();
+const readmePreview = document.createElement("article");
+readmePreview.className = "readme profile-readme-preview";
+readmePreview.hidden = true;
+readmePreview.setAttribute("aria-label", "README preview");
+profileForm.querySelector('[data-profile-panel="readme"]').append(readmePreview);
+function setEditorSection(section) {
+  const active = editSections.includes(section) ? section : "profile";
+  document.body.dataset.profileEditSection = active;
+  editorNav.querySelectorAll("button").forEach((button) => button.setAttribute("aria-current", button.dataset.profileSection === active ? "page" : "false"));
+  profileForm.querySelectorAll("[data-profile-panel]").forEach((panel) => { panel.hidden = matchMedia("(max-width: 820px)").matches && panel.dataset.profilePanel !== active; });
+  document.getElementById("previewReadme").hidden = active !== "readme" && matchMedia("(max-width: 820px)").matches;
+  document.getElementById("publishReadme").hidden = active !== "readme" && matchMedia("(max-width: 820px)").matches;
+}
+function showEditorFromUrl(focus = true) {
+  const query = new URLSearchParams(location.search);
+  if (query.get("edit") !== "1" || ownUser?.public_slug !== member?.slug) return;
+  document.body.classList.add("profile-edit-mode");
+  setEditorSection(query.get("section") || "profile");
+  if (profileEditor.classList.contains("hidden")) Motion.show(profileEditor);
+  if (focus && matchMedia("(max-width: 820px)").matches) {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    closeEditor.focus({ preventScroll: true });
+  }
+}
+function navigateEditor(section) {
+  const url = new URL(location.href);
+  url.searchParams.set("edit", "1");
+  url.searchParams.set("section", section);
+  history.pushState({}, "", url);
+  showEditorFromUrl();
+}
+editorNav.addEventListener("click", (event) => {
+  const target = event.target.closest("[data-profile-section]");
+  if (target) navigateEditor(target.dataset.profileSection);
+});
+document.getElementById("editToggle").onclick = () => navigateEditor("profile");
+closeEditor.onclick = async () => {
+  if (profileDirty && !confirm("Discard your unsaved profile changes?")) return;
+  const discarded = profileDirty;
+  profileDirty = false;
+  const url = new URL(location.href); url.searchParams.delete("edit"); url.searchParams.delete("section");
+  history.pushState({}, "", url);
+  await Motion.hide(profileEditor);
+  document.body.classList.remove("profile-edit-mode");
+  if (discarded) await load();
+  document.getElementById("editToggle").focus({ preventScroll: true });
+};
+window.addEventListener("popstate", () => {
+  if (new URLSearchParams(location.search).get("edit") === "1") showEditorFromUrl(false);
+  else {
+    if (profileDirty && !confirm("Discard your unsaved profile changes?")) {
+      const url = new URL(location.href);
+      url.searchParams.set("edit", "1");
+      url.searchParams.set("section", document.body.dataset.profileEditSection || "profile");
+      history.pushState({}, "", url);
+      return;
+    }
+    const discarded = profileDirty;
+    profileDirty = false;
+    document.body.classList.remove("profile-edit-mode"); Motion.hide(profileEditor);
+    if (discarded) load().catch((error) => { document.getElementById("profileMessage").textContent = error.message; });
+  }
+});
+window.matchMedia("(max-width: 820px)").addEventListener("change", () => { arrangeProfileHeader(); setEditorSection(new URLSearchParams(location.search).get("section") || "profile"); });
 document.getElementById("readmeTab").onclick = async () => { await Motion.swap(document.getElementById("profileProjects"), document.getElementById("readme")); document.getElementById("readmeTab").setAttribute("aria-selected", "true"); document.getElementById("projectsTab").setAttribute("aria-selected", "false"); };
 document.getElementById("projectsTab").onclick = async () => { await Motion.swap(document.getElementById("readme"), document.getElementById("profileProjects")); document.getElementById("readmeTab").setAttribute("aria-selected", "false"); document.getElementById("projectsTab").setAttribute("aria-selected", "true"); };
-document.getElementById("previewReadme").onclick = () => { document.getElementById("readme").innerHTML = markdown(document.getElementById("readmeDraft").value); document.getElementById("readme").scrollIntoView({ behavior: "smooth" }); };
-document.getElementById("addProfileLink").onclick = () => addLinkRow();
+document.getElementById("previewReadme").onclick = () => {
+  const source = document.getElementById("readmeDraft").value;
+  const html = source.trim() ? markdown(source) : "<p>No README text to preview yet.</p>";
+  if (matchMedia("(max-width: 820px)").matches && document.body.classList.contains("profile-edit-mode")) {
+    readmePreview.innerHTML = html;
+    readmePreview.hidden = false;
+    readmePreview.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+  } else {
+    document.getElementById("readme").innerHTML = html;
+    document.getElementById("readme").scrollIntoView({ behavior: "smooth" });
+  }
+};
+document.getElementById("addProfileLink").onclick = () => { addLinkRow(); profileDirty = true; };
 
 const avatarInput = document.getElementById("avatarFile");
 const avatarStatus = document.getElementById("avatarStatus");
@@ -207,7 +333,6 @@ avatarInput.onchange = async () => {
   }
 };
 
-const profileForm = document.getElementById("profileForm");
 const profileMessage = document.getElementById("profileMessage");
 const githubProfileUrl = document.getElementById("githubProfileUrl");
 const githubReadmeEnabled = document.getElementById("githubReadmeEnabled");
@@ -221,8 +346,13 @@ const saveProfile = async ({ refresh = true } = {}) => {
   data.privacy = { ...(ownUser?.privacy || {}), wechatPublic: document.getElementById("showWechatPublic").checked, emailPublic: document.getElementById("showEmailPublic").checked };
   delete data.skillsInput;
   await requestJson("/api/profile", jsonOptions("PUT", data));
+  profileDirty = false;
   if (refresh) await load();
 };
+
+profileForm.addEventListener("input", (event) => { if (!event.target.closest(".nfc-settings")) profileDirty = true; });
+profileForm.addEventListener("change", (event) => { if (!event.target.closest(".nfc-settings")) profileDirty = true; });
+window.addEventListener("beforeunload", (event) => { if (profileDirty) { event.preventDefault(); event.returnValue = ""; } });
 
 profileForm.onsubmit = async (event) => {
   event.preventDefault();
