@@ -63,6 +63,23 @@ shell changes surrounding navigation/footer, not imported README sizing rules.
 
 ## Rollout
 
-Remote migration inspection found only `0009_member_workspace.sql` pending.
-Production migration, deployment version, and custom-domain smoke checks are
-recorded below after release verification.
+- Applied `0009_member_workspace.sql` to remote D1 successfully. A subsequent
+  migration listing reports no pending migrations.
+- Deployed through the existing `npm run deploy` Cloudflare workflow.
+  Final Worker version: `90b3e993-4a96-4d52-aee9-f763cdd70c7e`.
+- Verified `https://novibenocode.ccwu.cc`: all nine workspace/public entry pages
+  return the shared shell. The CSS and new JavaScript bundles match local build
+  hashes. Protected APIs return 401 to visitors, and the public project query
+  succeeds against the migrated schema.
+- Live `/projects` preserves its destination through sign-in. The live public
+  gallery and profile render normally; all 36 images in the existing imported
+  GitHub README loaded, retaining the intended two-column desktop arrangement.
+- Live 320px inspection caught a wrapping footer link. Reduced the narrow-screen
+  gap, bumped the stylesheet version, and reverified all five footer links on
+  one row with no horizontal overflow. Shared script versions were updated on
+  legacy pages as well.
+- The closed Cloud Cat vote remains unchanged. No test accounts, projects,
+  invitations, or notifications were created in production.
+
+Implementation and release notes are committed locally. No Git push was part
+of this rollout.
